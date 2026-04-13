@@ -1,15 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Broker Dashboard - FCC Live Multi-Driver Map</title>
+  <title>Broker Dashboard - FCC Route Intelligence</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
@@ -38,15 +34,16 @@
 
     .section {
       padding: 20px;
-      max-width: 1200px;
+      max-width: 1300px;
       margin: 0 auto;
     }
 
     .card {
       background: #1e293b;
-      border-radius: 12px;
+      border-radius: 14px;
       padding: 16px;
       margin-bottom: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
     }
 
     .back-link {
@@ -73,19 +70,50 @@
 
     #map {
       width: 100%;
-      height: 500px;
-      border-radius: 12px;
+      height: 560px;
+      border-radius: 14px;
       overflow: hidden;
     }
 
-    .grid {
+    .layout {
       display: grid;
       grid-template-columns: 2fr 1fr;
       gap: 16px;
     }
 
+    .side-stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .top-stats {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .stat-box {
+      background: #1e293b;
+      border-radius: 14px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-box h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+
+    .stat-box p {
+      margin: 0;
+      font-size: 26px;
+      font-weight: bold;
+    }
+
     .driver-list {
-      max-height: 500px;
+      max-height: 300px;
       overflow-y: auto;
     }
 
@@ -97,58 +125,71 @@
       line-height: 1.7;
     }
 
-    .driver-item strong {
-      color: #ffffff;
-    }
-
-    .driver-badge {
+    .badge {
       display: inline-block;
       padding: 4px 8px;
       border-radius: 999px;
-      background: #1d4ed8;
-      color: white;
       font-size: 12px;
       margin-top: 8px;
-    }
-
-    .top-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-
-    .stat-box {
-      background: #1e293b;
-      border-radius: 12px;
-      padding: 16px;
-      text-align: center;
-    }
-
-    .stat-box h3 {
-      margin: 0 0 8px 0;
-      font-size: 15px;
-      color: #cbd5e1;
-    }
-
-    .stat-box p {
-      margin: 0;
-      font-size: 28px;
       font-weight: bold;
     }
 
-    .leaflet-popup-content-wrapper {
+    .badge.green {
+      background: #166534;
+      color: #dcfce7;
+    }
+
+    .badge.red {
+      background: #991b1b;
+      color: #fee2e2;
+    }
+
+    .badge.yellow {
+      background: #854d0e;
+      color: #fef3c7;
+    }
+
+    .panel-row {
+      margin-bottom: 10px;
+      line-height: 1.7;
+    }
+
+    .route-line {
+      padding: 10px 12px;
+      background: #0f172a;
       border-radius: 10px;
+      margin-bottom: 10px;
+      line-height: 1.7;
+    }
+
+    .marker-pin {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 3px solid white;
+      box-shadow: 0 0 0 2px rgba(0,0,0,0.25);
+    }
+
+    .marker-green {
+      background: #22c55e;
+    }
+
+    .marker-red {
+      background: #ef4444;
+    }
+
+    .marker-yellow {
+      background: #f59e0b;
     }
 
     .leaflet-popup-content {
       color: #111827;
-      font-size: 14px;
       line-height: 1.6;
+      font-size: 14px;
     }
 
-    @media (max-width: 900px) {
-      .grid {
+    @media (max-width: 980px) {
+      .layout {
         grid-template-columns: 1fr;
       }
 
@@ -162,13 +203,13 @@
 
   <div class="header">
     <h1>Broker Dashboard</h1>
-    <p>Live multi-driver tracking map</p>
+    <p>Live multi-driver map, weather, traffic, incidents, and route intelligence</p>
   </div>
 
   <div class="section">
     <div class="card">
       <a class="back-link" href="/index.html">← Back to Home</a>
-      <div id="systemStatus" class="status">LOADING LIVE MAP</div>
+      <div id="systemStatus" class="status">LOADING LIVE INTELLIGENCE</div>
     </div>
 
     <div class="top-stats">
@@ -177,12 +218,16 @@
         <p id="totalDrivers">0</p>
       </div>
       <div class="stat-box">
-        <h3>Tracking Active</h3>
+        <h3>Active</h3>
         <p id="trackingActive">0</p>
       </div>
       <div class="stat-box">
-        <h3>Tracking Off</h3>
+        <h3>Off</h3>
         <p id="trackingOff">0</p>
+      </div>
+      <div class="stat-box">
+        <h3>Stale</h3>
+        <p id="trackingStale">0</p>
       </div>
       <div class="stat-box">
         <h3>Last Refresh</h3>
@@ -190,17 +235,45 @@
       </div>
     </div>
 
-    <div class="grid">
+    <div class="layout">
       <div class="card">
         <h2>Live Driver Map</h2>
-        <p class="small">This map refreshes automatically and shows all drivers with saved coordinates.</p>
+        <p class="small">
+          Green = active, red = tracking off, yellow = stale.
+        </p>
         <div id="map"></div>
       </div>
 
-      <div class="card">
-        <h2>Tracked Driver List</h2>
-        <div id="driverList" class="driver-list">
-          Loading drivers...
+      <div class="side-stack">
+        <div class="card">
+          <h2>Live Weather</h2>
+          <div id="weatherPanel">
+            Loading weather...
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Traffic / Incidents</h2>
+          <div id="trafficPanel">
+            Loading traffic panel...
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Route Intelligence</h2>
+          <div id="routePanel">
+            <div class="route-line">Best Route: Waiting for live driver data</div>
+            <div class="route-line">Quickest Route: Waiting for live driver data</div>
+            <div class="route-line">Toll Risk: Waiting for traffic provider</div>
+            <div class="route-line">Detour Advice: Waiting for incident provider</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Tracked Driver List</h2>
+          <div id="driverList" class="driver-list">
+            Loading drivers...
+          </div>
         </div>
       </div>
     </div>
@@ -212,6 +285,9 @@
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
     );
 
+    // ADD YOUR TOMTOM KEY HERE FOR LIVE TRAFFIC / INCIDENTS
+    const TOMTOM_API_KEY = "PASTE_TOMTOM_KEY_HERE";
+
     const map = L.map("map").setView([33.749, -84.388], 6);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -221,12 +297,38 @@
 
     let markersLayer = L.layerGroup().addTo(map);
 
+    function getDriverState(driver) {
+      if (!driver.updated_at) return "off";
+
+      const minutesOld = (Date.now() - new Date(driver.updated_at).getTime()) / 60000;
+
+      if (!driver.is_tracking) return "off";
+      if (minutesOld > 5) return "stale";
+      return "active";
+    }
+
+    function makeMarkerIcon(state) {
+      const className =
+        state === "active" ? "marker-green" :
+        state === "stale" ? "marker-yellow" :
+        "marker-red";
+
+      return L.divIcon({
+        className: "",
+        html: `<div class="marker-pin ${className}"></div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+        popupAnchor: [0, -12]
+      });
+    }
+
     async function loadDrivers() {
       const systemStatus = document.getElementById("systemStatus");
       const driverList = document.getElementById("driverList");
       const totalDrivers = document.getElementById("totalDrivers");
       const trackingActive = document.getElementById("trackingActive");
       const trackingOff = document.getElementById("trackingOff");
+      const trackingStale = document.getElementById("trackingStale");
       const lastRefresh = document.getElementById("lastRefresh");
 
       const { data, error } = await supabaseClient
@@ -240,12 +342,17 @@
         return;
       }
 
-      systemStatus.textContent = "LIVE MAP ACTIVE";
+      systemStatus.textContent = "LIVE INTELLIGENCE ACTIVE";
       lastRefresh.textContent = new Date().toLocaleTimeString();
 
+      const activeCount = data.filter(d => getDriverState(d) === "active").length;
+      const staleCount = data.filter(d => getDriverState(d) === "stale").length;
+      const offCount = data.filter(d => getDriverState(d) === "off").length;
+
       totalDrivers.textContent = data.length;
-      trackingActive.textContent = data.filter(d => d.is_tracking).length;
-      trackingOff.textContent = data.filter(d => !d.is_tracking).length;
+      trackingActive.textContent = activeCount;
+      trackingStale.textContent = staleCount;
+      trackingOff.textContent = offCount;
 
       markersLayer.clearLayers();
 
@@ -253,9 +360,11 @@
       const bounds = [];
 
       data.forEach(driver => {
-        const isLive = !!driver.is_tracking;
-        const lat = driver.lat;
-        const lng = driver.lng;
+        const state = getDriverState(driver);
+        const badgeClass =
+          state === "active" ? "green" :
+          state === "stale" ? "yellow" :
+          "red";
 
         driverHtml += `
           <div class="driver-item">
@@ -264,22 +373,25 @@
             Load: ${driver.load_number || "N/A"}<br>
             Status: ${driver.driver_status || "N/A"}<br>
             Last Update: ${driver.updated_at ? new Date(driver.updated_at).toLocaleString() : "N/A"}<br>
-            <span class="driver-badge">${isLive ? "TRACKING ACTIVE" : "TRACKING OFF"}</span>
+            <span class="badge ${badgeClass}">${state.toUpperCase()}</span>
           </div>
         `;
 
-        if (lat && lng) {
-          const marker = L.marker([lat, lng]).bindPopup(`
+        if (driver.lat && driver.lng) {
+          const marker = L.marker(
+            [driver.lat, driver.lng],
+            { icon: makeMarkerIcon(state) }
+          ).bindPopup(`
             <strong>${driver.driver_name || "Unknown Driver"}</strong><br>
             Truck: ${driver.truck_number || "N/A"}<br>
             Load: ${driver.load_number || "N/A"}<br>
             Status: ${driver.driver_status || "N/A"}<br>
-            Tracking: ${isLive ? "Active" : "Off"}<br>
+            Tracking State: ${state}<br>
             Updated: ${driver.updated_at ? new Date(driver.updated_at).toLocaleString() : "N/A"}
           `);
 
           marker.addTo(markersLayer);
-          bounds.push([lat, lng]);
+          bounds.push([driver.lat, driver.lng]);
         }
       });
 
@@ -290,11 +402,120 @@
       } else if (bounds.length > 1) {
         map.fitBounds(bounds, { padding: [40, 40] });
       }
+
+      if (data.length > 0) {
+        const latestWithCoords = data.find(d => d.lat && d.lng);
+        if (latestWithCoords) {
+          loadWeather(latestWithCoords.lat, latestWithCoords.lng);
+          loadTraffic(latestWithCoords.lat, latestWithCoords.lng);
+          updateRoutePanel(latestWithCoords);
+        }
+      }
+    }
+
+    async function loadWeather(lat, lng) {
+      const weatherPanel = document.getElementById("weatherPanel");
+
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,precipitation,rain,showers,snowfall,wind_speed_10m,weather_code&timezone=auto`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!data.current) {
+          weatherPanel.innerHTML = "No weather data available.";
+          return;
+        }
+
+        weatherPanel.innerHTML = `
+          <div class="panel-row">Temperature: ${data.current.temperature_2m ?? "N/A"} °C</div>
+          <div class="panel-row">Humidity: ${data.current.relative_humidity_2m ?? "N/A"}%</div>
+          <div class="panel-row">Wind Speed: ${data.current.wind_speed_10m ?? "N/A"} km/h</div>
+          <div class="panel-row">Rain: ${data.current.rain ?? 0}</div>
+          <div class="panel-row">Showers: ${data.current.showers ?? 0}</div>
+          <div class="panel-row">Snowfall: ${data.current.snowfall ?? 0}</div>
+          <div class="panel-row">Weather Code: ${data.current.weather_code ?? "N/A"}</div>
+        `;
+      } catch (err) {
+        weatherPanel.innerHTML = "Weather error loading.";
+      }
+    }
+
+    async function loadTraffic(lat, lng) {
+      const trafficPanel = document.getElementById("trafficPanel");
+
+      if (!TOMTOM_API_KEY || TOMTOM_API_KEY === "Y18RLm8evGUvp0THSxz50lZJZMYNqH25") {
+        trafficPanel.innerHTML = `
+          <div class="panel-row">Traffic provider key not added yet.</div>
+          <div class="panel-row">Add your TomTom key to enable:</div>
+          <div class="panel-row">- live flow speed</div>
+          <div class="panel-row">- traffic delay</div>
+          <div class="panel-row">- accidents / closures / construction</div>
+        `;
+        return;
+      }
+
+      try {
+        const flowUrl = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?key=${TOMTOM_API_KEY}&point=${lat},${lng}`;
+        const flowRes = await fetch(flowUrl);
+        const flowData = await flowRes.json();
+
+        let trafficHtml = `
+          <div class="panel-row">Current Speed: ${flowData.flowSegmentData?.currentSpeed ?? "N/A"}</div>
+          <div class="panel-row">Free Flow Speed: ${flowData.flowSegmentData?.freeFlowSpeed ?? "N/A"}</div>
+          <div class="panel-row">Current Travel Time: ${flowData.flowSegmentData?.currentTravelTime ?? "N/A"} sec</div>
+          <div class="panel-row">Free Flow Travel Time: ${flowData.flowSegmentData?.freeFlowTravelTime ?? "N/A"} sec</div>
+          <div class="panel-row">Road Closure: ${flowData.flowSegmentData?.roadClosure === true ? "Yes" : "No"}</div>
+        `;
+
+        const bbox = `${lng-0.1},${lat-0.1},${lng+0.1},${lat+0.1}`;
+        const incidentUrl = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${TOMTOM_API_KEY}&bbox=${bbox}&fields={incidents{type,geometry{type,coordinates},properties{iconCategory,events{description},from,to,length,delay,roadNumbers,startTime,endTime}}}&language=en-GB&timeValidityFilter=present`;
+        const incidentRes = await fetch(incidentUrl);
+        const incidentData = await incidentRes.json();
+
+        const incidents = incidentData.incidents || [];
+        if (incidents.length > 0) {
+          trafficHtml += `<div class="panel-row"><strong>Incidents Nearby:</strong> ${incidents.length}</div>`;
+          incidents.slice(0, 3).forEach((inc, i) => {
+            const props = inc.properties || {};
+            const firstEvent = props.events && props.events[0] ? props.events[0].description : "Traffic incident";
+            trafficHtml += `
+              <div class="route-line">
+                Incident ${i + 1}: ${firstEvent}<br>
+                Delay: ${props.delay ?? "N/A"} sec<br>
+                Road: ${(props.roadNumbers || []).join(", ") || "N/A"}
+              </div>
+            `;
+          });
+        } else {
+          trafficHtml += `<div class="panel-row">Incidents Nearby: 0</div>`;
+        }
+
+        trafficPanel.innerHTML = trafficHtml;
+      } catch (err) {
+        trafficPanel.innerHTML = "Traffic data error loading.";
+      }
+    }
+
+    function updateRoutePanel(driver) {
+      const routePanel = document.getElementById("routePanel");
+      const state = getDriverState(driver);
+
+      let detourAdvice = "No detour recommendation yet.";
+      if (state === "stale") detourAdvice = "Driver location is stale. Check route and reconnect tracking.";
+      if (state === "off") detourAdvice = "Tracking is off. Route quality cannot be verified.";
+
+      routePanel.innerHTML = `
+        <div class="route-line">Driver: ${driver.driver_name || "Unknown Driver"}</div>
+        <div class="route-line">Truck: ${driver.truck_number || "N/A"}</div>
+        <div class="route-line">Load: ${driver.load_number || "N/A"}</div>
+        <div class="route-line">Current Status: ${driver.driver_status || "N/A"}</div>
+        <div class="route-line">Tracking State: ${state.toUpperCase()}</div>
+        <div class="route-line">Detour Advice: ${detourAdvice}</div>
+      `;
     }
 
     loadDrivers();
     setInterval(loadDrivers, 5000);
   </script>
-
 </body>
 </html>
