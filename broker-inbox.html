@@ -62,17 +62,9 @@
       color: rgba(255,255,255,0.92);
     }
 
-    .toast.declined_load {
-      background: #7f1d1d;
-    }
-
-    .toast.pod_uploaded {
-      background: #14532d;
-    }
-
-    .toast.general {
-      background: #334155;
-    }
+    .toast.declined_load { background: #7f1d1d; }
+    .toast.pod_uploaded { background: #14532d; }
+    .toast.general { background: #334155; }
 
     .toast-close {
       margin-top: 10px;
@@ -109,8 +101,10 @@
       <button class="button" onclick="location.href='/auth.html'">Login</button>
       <button class="button secondary" onclick="location.href='/loadboard.html'">Load Board</button>
       <button class="button secondary" onclick="location.href='/dispatch-timeline.html'">Dispatch Timeline</button>
+      <button class="button green" onclick="enableDesktopAlerts()">Enable Desktop Alerts</button>
       <button class="button red" onclick="signOut()">Sign Out</button>
       <div id="authBox" class="status">Checking session...</div>
+      <div id="notifyStatus" class="status">Notification permission: checking...</div>
     </div>
 
     <div class="card">
@@ -160,6 +154,7 @@
     let selectedNotification = null;
     let selectedLoadId = null;
     let shownToastIds = new Set();
+    let audioContext = null;
 
     async function signOut() {
       await supabaseClient.auth.signOut();
@@ -191,6 +186,104 @@
       document.getElementById("authBox").innerHTML =
         `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
       return true;
+    }
+
+    function updateNotificationPermissionStatus() {
+      const el = document.getElementById("notifyStatus");
+      if (!("Notification" in window)) {
+        el.innerHTML = "Browser notifications are not supported in this browser.";
+        return;
+      }
+      el.innerHTML = `Notification permission: ${Notification.permission}`;
+    }
+
+    async function enableDesktopAlerts() {
+      if (!("Notification" in window)) {
+        alert("This browser does not support desktop notifications.");
+        return;
+      }
+
+      if (Notification.permission === "granted") {
+        updateNotificationPermissionStatus();
+        alert("Desktop alerts are already enabled.");
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      updateNotificationPermissionStatus();
+
+      if (permission === "granted") {
+        showSystemNotification("FCC Alerts Enabled", "Broker desktop alerts are now turned on.");
+        playAlertSound("general");
+      } else {
+        alert("Desktop alert permission was not granted.");
+      }
+    }
+
+    function getAudioContext() {
+      if (!audioContext) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          audioContext = new AudioCtx();
+        }
+      }
+      return audioContext;
+    }
+
+    function playTone(frequency, durationMs, volume) {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+      }
+
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      gainNode.gain.value = volume;
+
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+      oscillator.start(now);
+      gainNode.gain.setValueAtTime(volume, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + durationMs / 1000);
+      oscillator.stop(now + durationMs / 1000);
+    }
+
+    function playAlertSound(type) {
+      try {
+        if (type === "declined_load") {
+          playTone(520, 180, 0.08);
+          setTimeout(() => playTone(420, 220, 0.08), 180);
+        } else if (type === "pod_uploaded") {
+          playTone(700, 140, 0.07);
+          setTimeout(() => playTone(880, 180, 0.07), 140);
+        } else {
+          playTone(660, 180, 0.07);
+        }
+      } catch (e) {
+        console.log("Sound alert blocked or unavailable.", e);
+      }
+    }
+
+    function showSystemNotification(title, body) {
+      if (!("Notification" in window)) return;
+      if (Notification.permission !== "granted") return;
+
+      try {
+        new Notification(title, {
+          body,
+          tag: "fcc-broker-alert",
+          renotify: true
+        });
+      } catch (e) {
+        console.log("System notification unavailable.", e);
+      }
     }
 
     async function addNotification(loadId, eventType, title, message, brokerCompany) {
@@ -236,6 +329,9 @@
       });
 
       wrap.prepend(toast);
+
+      playAlertSound(notification.event_type || "general");
+      showSystemNotification(notification.title, notification.message || "");
 
       setTimeout(() => {
         toast.remove();
@@ -616,6 +712,7 @@
     }
 
     (async () => {
+      updateNotificationPermissionStatus();
       const ok = await checkAccess();
       if (ok) {
         await loadDriversForReassign();
