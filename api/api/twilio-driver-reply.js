@@ -11,8 +11,12 @@ module.exports = async (req, res) => {
       return res.status(500).send("Missing Supabase server credentials");
     }
 
-    // Twilio sends form-encoded body by default
-    const params = new URLSearchParams(req.body || "");
+    const rawBody =
+      typeof req.body === "string"
+        ? req.body
+        : new URLSearchParams(req.body || {}).toString();
+
+    const params = new URLSearchParams(rawBody);
     const bodyRaw = (params.get("Body") || "").trim();
     const from = (params.get("From") || "").trim();
 
@@ -33,20 +37,13 @@ module.exports = async (req, res) => {
     }
 
     if (!["YES", "NO"].includes(command)) {
-      return twiml(
-        res,
-        "Reply YES {loadId} to accept or NO {loadId} to decline. Example: YES 12"
-      );
+      return twiml(res, "Reply YES {loadId} to accept or NO {loadId} to decline.");
     }
 
     if (!loadId || Number.isNaN(loadId)) {
-      return twiml(
-        res,
-        "Missing load ID. Reply like YES 12 or NO 12."
-      );
+      return twiml(res, "Missing load ID. Reply like YES 12 or NO 12.");
     }
 
-    // Find the driver row by phone
     const driverRes = await fetch(
       `${supabaseUrl}/rest/v1/driver_locations?phone=eq.${encodeURIComponent(from)}&select=id,driver_name,truck_number&limit=1`,
       { headers }
@@ -59,7 +56,6 @@ module.exports = async (req, res) => {
 
     const driver = driverRows[0];
 
-    // Find active dispatch for this load + driver
     const dispatchRes = await fetch(
       `${supabaseUrl}/rest/v1/dispatch_assignments?load_id=eq.${loadId}&driver_location_id=eq.${driver.id}&select=id,status&order=created_at.desc&limit=1`,
       { headers }
@@ -72,51 +68,91 @@ module.exports = async (req, res) => {
 
     const dispatch = dispatchRows[0];
 
-    const dispatchStatus = command === "YES" ? "accepted" : "declined";
-    const loadStatus = command === "YES" ? "accepted" : "declined";
-    const tripEvent = command === "YES" ? "accepted" : "declined";
-    const tripNote =
-      command === "YES"
-        ? `Driver accepted by SMS from ${from}`
-        : `Driver declined by SMS from ${from}`;
+    const nowIso = new Date().toISOString();
 
-    // Update dispatch assignment
     await fetch(
       `${supabaseUrl}/rest/v1/dispatch_assignments?id=eq.${dispatch.id}`,
       {
         method: "PATCH",
         headers,
         body: JSON.stringify({
-          status: dispatchStatus,
-          updated_at: new Date().toISOString(),
-          note: tripNote
+          sms_reply_received_at: nowIso,
+          updated_at: nowIso
         })
       }
     );
 
-    // Update load
-    const loadPatch =
-      command === "YES"
-        ? {
-            status: loadStatus,
-            updated_at: new Date().toISOString()
-          }
-        : {
-            status: loadStatus,
-            decline_reason: `Driver declined by SMS from ${from}`,
-            updated_at: new Date().toISOString()
-          };
+    if (command === "YES") {
+      await fetch(
+        `${supabaseUrl}/rest/v1/dispatch_assignments?id=eq.${dispatch.id}`,
+        {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({
+            status: "accepted",
+            note: `Driver accepted by SMS from ${from}`,
+            updated_at: nowIso
+          })
+        }
+      );
+
+      await fetch(
+        `${supabaseUrl}/rest/v1/loads?id=eq.${loadId}`,
+        {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({
+            status: "accepted",
+            sms_response_status: "accepted",
+            updated_at: nowIso
+          })
+        }
+      );
+
+      await fetch(
+        `${supabaseUrl}/rest/v1/trip_events`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify([{
+            load_id: loadId,
+            event_type: "accepted",
+            note: `Driver accepted by SMS from ${from}`
+          }])
+        }
+      );
+
+      return twiml(res, `Load ${loadId} accepted. Dispatch updated.`);
+    }
+
+    await fetch(
+      `${supabaseUrl}/rest/v1/dispatch_assignments?id=eq.${dispatch.id}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          status: "declined",
+          note: `Driver declined by SMS from ${from}`,
+          updated_at: nowIso
+        })
+      }
+    );
 
     await fetch(
       `${supabaseUrl}/rest/v1/loads?id=eq.${loadId}`,
       {
         method: "PATCH",
         headers,
-        body: JSON.stringify(loadPatch)
+        body: JSON.stringify({
+          status: "declined",
+          sms_response_status: "declined",
+          decline_reason: `Driver declined by SMS from ${from}`,
+          last_declined_driver_id: driver.id,
+          updated_at: nowIso
+        })
       }
     );
 
-    // Insert trip event
     await fetch(
       `${supabaseUrl}/rest/v1/trip_events`,
       {
@@ -124,18 +160,22 @@ module.exports = async (req, res) => {
         headers,
         body: JSON.stringify([{
           load_id: loadId,
-          event_type: tripEvent,
-          note: tripNote
+          event_type: "declined",
+          note: `Driver declined by SMS from ${from}`
         }])
       }
     );
 
-    return twiml(
-      res,
-      command === "YES"
-        ? `Load ${loadId} accepted. Dispatch has been updated.`
-        : `Load ${loadId} declined. Dispatch has been updated.`
-    );
+    await fetch(`${req.headers.origin || process.env.APP_BASE_URL}/api/auto-reassign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        loadId,
+        reason: "driver_declined_sms"
+      })
+    }).catch(() => {});
+
+    return twiml(res, `Load ${loadId} declined. Dispatch updated and next driver is being contacted.`);
   } catch (error) {
     return twiml(res, `Error processing reply: ${error.message}`);
   }
