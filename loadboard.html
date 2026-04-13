@@ -1,368 +1,93 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>FCC Load Board</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
-    body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:white; }
-    .wrap { max-width:1300px; margin:20px auto; padding:20px; }
-    .card { background:#1e293b; border-radius:14px; padding:16px; margin-bottom:16px; }
-    .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    input, select { width:100%; padding:12px; border:none; border-radius:10px; box-sizing:border-box; margin:8px 0 12px; }
-    button { padding:12px 18px; border:none; border-radius:10px; background:#2563eb; color:white; font-weight:bold; cursor:pointer; margin-right:10px; margin-top:8px; }
-    .secondary { background:#334155; }
-    .red { background:#dc2626; }
-    .green { background:#166534; }
-    .row { background:#0f172a; border-radius:10px; padding:12px; margin-bottom:10px; line-height:1.7; }
-    .status { padding:10px 12px; background:#0f172a; border-radius:10px; line-height:1.6; }
-    .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:bold; }
-    .open { background:#1d4ed8; color:white; }
-    .matched { background:#7c3aed; color:white; }
-    .assigned { background:#c2410c; color:white; }
-    .accepted { background:#166534; color:white; }
-    .declined { background:#991b1b; color:white; }
-    .in_transit { background:#0f766e; color:white; }
-    .delivered { background:#14532d; color:white; }
-    .cancelled { background:#6b7280; color:white; }
+async function assignLoad() {
+  if (!(await checkAccess())) return;
 
-    @media (max-width: 900px) {
-      .grid { grid-template-columns:1fr; }
-    }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="card">
-      <h1>FCC Load Board</h1>
-      <button onclick="location.href='/auth.html'">Login</button>
-      <button class="secondary" onclick="location.href='/admin.html'">Admin</button>
-      <button class="secondary" onclick="location.href='/broker.html'">Broker Map</button>
-      <button class="red" onclick="signOut()">Sign Out</button>
-      <div id="authBox" class="status">Checking session...</div>
-    </div>
+  const loadId = Number(document.getElementById("loadSelect").value);
+  const driverId = Number(document.getElementById("driverSelect").value);
 
-    <div class="grid">
-      <div class="card">
-        <h2>Create Load</h2>
-        <input id="loadNumber" placeholder="Load Number" />
-        <input id="brokerCompany" placeholder="Broker Company" />
-        <input id="shipperCompany" placeholder="Shipper Company" />
-        <input id="ownerCompany" placeholder="Owner Company" />
-        <input id="pickupName" placeholder="Pickup Name" />
-        <input id="pickupAddress" placeholder="Pickup Address" />
-        <input id="pickupLat" placeholder="Pickup Latitude (optional)" />
-        <input id="pickupLng" placeholder="Pickup Longitude (optional)" />
-        <input id="deliveryName" placeholder="Delivery Name" />
-        <input id="deliveryAddress" placeholder="Delivery Address" />
-        <input id="deliveryLat" placeholder="Delivery Latitude (optional)" />
-        <input id="deliveryLng" placeholder="Delivery Longitude (optional)" />
-        <input id="equipmentType" placeholder="Equipment Type" />
-        <input id="weightLbs" placeholder="Weight Lbs" />
-        <input id="rate" placeholder="Rate" />
-        <button class="green" onclick="createLoad()">Create Load</button>
-        <div id="createStatus" class="status">No load created yet.</div>
-      </div>
+  if (!loadId || !driverId) {
+    document.getElementById("assignStatus").innerHTML = "Select both load and driver.";
+    return;
+  }
 
-      <div class="card">
-        <h2>Assign / Unassign</h2>
-        <select id="loadSelect">
-          <option value="">Select load</option>
-        </select>
-        <select id="driverSelect">
-          <option value="">Select driver</option>
-        </select>
-        <button onclick="assignLoad()">Assign Driver</button>
-        <button class="red" onclick="unassignLoad()">Unassign Driver</button>
-        <div id="assignStatus" class="status">No assignment action yet.</div>
-      </div>
-    </div>
+  // 🔹 1. Get FULL load + driver data (needed for SMS)
+  const { data: load } = await supabaseClient
+    .from("loads")
+    .select("*")
+    .eq("id", loadId)
+    .single();
 
-    <div class="grid">
-      <div class="card">
-        <h2>Loads</h2>
-        <div id="loadsList">Loading loads...</div>
-      </div>
+  const { data: driver } = await supabaseClient
+    .from("driver_locations")
+    .select("*")
+    .eq("id", driverId)
+    .single();
 
-      <div class="card">
-        <h2>Dispatch Records</h2>
-        <div id="dispatchList">Loading dispatch records...</div>
-      </div>
-    </div>
-  </div>
+  if (!load || !driver) {
+    document.getElementById("assignStatus").innerHTML = "Error loading driver or load.";
+    return;
+  }
 
-  <script>
-    const supabaseClient = supabase.createClient(
-      "https://mubhwsjppmebuwpmsuwg.supabase.co",
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
-    );
+  // 🔹 2. Insert dispatch record
+  const { error: insertError } = await supabaseClient
+    .from("dispatch_assignments")
+    .insert([{
+      load_id: loadId,
+      driver_location_id: driverId,
+      assigned_by: currentUser.id,
+      status: "assigned"
+    }]);
 
-    let currentProfile = null;
-    let currentUser = null;
+  if (insertError) {
+    document.getElementById("assignStatus").innerHTML = `Assign error: ${insertError.message}`;
+    return;
+  }
 
-    async function signOut() {
-      await supabaseClient.auth.signOut();
-      location.href = "/auth.html";
-    }
+  // 🔹 3. Update load status
+  const { error: updateError } = await supabaseClient
+    .from("loads")
+    .update({
+      assigned_driver_location_id: driverId,
+      status: "assigned",
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", loadId);
 
-    async function checkAccess() {
-      const { data: userData } = await supabaseClient.auth.getUser();
-      currentUser = userData.user;
+  if (updateError) {
+    document.getElementById("assignStatus").innerHTML = `Load update error: ${updateError.message}`;
+    return;
+  }
 
-      if (!currentUser) {
-        document.getElementById("authBox").innerHTML = "Not signed in.";
-        return false;
-      }
-
-      const { data: profile } = await supabaseClient
-        .from("profiles")
-        .select("*")
-        .eq("user_id", currentUser.id)
-        .maybeSingle();
-
-      currentProfile = profile;
-
-      if (!profile || !["admin", "broker"].includes(profile.role)) {
-        document.getElementById("authBox").innerHTML = "Access denied. Broker or admin required.";
-        return false;
-      }
-
-      document.getElementById("authBox").innerHTML =
-        `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
-
-      return true;
-    }
-
-    async function createLoad() {
-      if (!(await checkAccess())) return;
-
-      const payload = {
-        load_number: document.getElementById("loadNumber").value.trim(),
-        broker_company: document.getElementById("brokerCompany").value.trim() || currentProfile.company_name,
-        shipper_company: document.getElementById("shipperCompany").value.trim(),
-        owner_company: document.getElementById("ownerCompany").value.trim(),
-        pickup_name: document.getElementById("pickupName").value.trim(),
-        pickup_address: document.getElementById("pickupAddress").value.trim(),
-        pickup_lat: document.getElementById("pickupLat").value ? Number(document.getElementById("pickupLat").value) : null,
-        pickup_lng: document.getElementById("pickupLng").value ? Number(document.getElementById("pickupLng").value) : null,
-        delivery_name: document.getElementById("deliveryName").value.trim(),
-        delivery_address: document.getElementById("deliveryAddress").value.trim(),
-        delivery_lat: document.getElementById("deliveryLat").value ? Number(document.getElementById("deliveryLat").value) : null,
-        delivery_lng: document.getElementById("deliveryLng").value ? Number(document.getElementById("deliveryLng").value) : null,
-        equipment_type: document.getElementById("equipmentType").value.trim(),
-        weight_lbs: document.getElementById("weightLbs").value ? Number(document.getElementById("weightLbs").value) : null,
-        rate: document.getElementById("rate").value ? Number(document.getElementById("rate").value) : null,
-        status: "open",
-        created_by: currentUser.id
-      };
-
-      if (!payload.load_number) {
-        document.getElementById("createStatus").innerHTML = "Load number is required.";
-        return;
-      }
-
-      const { error } = await supabaseClient.from("loads").insert([payload]);
-
-      document.getElementById("createStatus").innerHTML =
-        error ? `Create error: ${error.message}` : `Load ${payload.load_number} created.`;
-
-      if (!error) {
-        loadLoads();
-      }
-    }
-
-    function statusClass(status) {
-      return ["open","matched","assigned","accepted","declined","in_transit","delivered","cancelled"].includes(status)
-        ? status
-        : "open";
-    }
-
-    async function loadLoads() {
-      const { data, error } = await supabaseClient
-        .from("loads")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        document.getElementById("loadsList").innerHTML = "Error loading loads.";
-        return;
-      }
-
-      let html = "";
-      let options = `<option value="">Select load</option>`;
-
-      data.forEach(load => {
-        options += `<option value="${load.id}">${load.load_number} | ${load.status}</option>`;
-        html += `
-          <div class="row">
-            <strong>${load.load_number}</strong><br>
-            Broker: ${load.broker_company || "N/A"}<br>
-            Shipper: ${load.shipper_company || "N/A"}<br>
-            Owner: ${load.owner_company || "N/A"}<br>
-            Pickup: ${load.pickup_name || "N/A"}<br>
-            Delivery: ${load.delivery_name || "N/A"}<br>
-            Equipment: ${load.equipment_type || "N/A"}<br>
-            Rate: ${load.rate || "N/A"}<br>
-            <span class="badge ${statusClass(load.status)}">${(load.status || "open").toUpperCase()}</span>
-          </div>
-        `;
-      });
-
-      document.getElementById("loadsList").innerHTML = html || "No loads found.";
-      document.getElementById("loadSelect").innerHTML = options;
-    }
-
-    async function loadDrivers() {
-      const { data, error } = await supabaseClient
-        .from("driver_locations")
-        .select("*")
-        .order("updated_at", { ascending: false });
-
-      if (error) {
-        document.getElementById("driverSelect").innerHTML = `<option value="">Error loading drivers</option>`;
-        return;
-      }
-
-      let options = `<option value="">Select driver</option>`;
-      data.forEach(driver => {
-        options += `<option value="${driver.id}">${driver.driver_name || "Driver"} | Truck ${driver.truck_number || "N/A"} | ${driver.driver_status || "N/A"}</option>`;
-      });
-
-      document.getElementById("driverSelect").innerHTML = options;
-    }
-
-    async function assignLoad() {
-      if (!(await checkAccess())) return;
-
-      const loadId = Number(document.getElementById("loadSelect").value);
-      const driverId = Number(document.getElementById("driverSelect").value);
-
-      if (!loadId || !driverId) {
-        document.getElementById("assignStatus").innerHTML = "Select both load and driver.";
-        return;
-      }
-
-      const { error: insertError } = await supabaseClient
-        .from("dispatch_assignments")
-        .insert([{
-          load_id: loadId,
-          driver_location_id: driverId,
-          assigned_by: currentUser.id,
-          status: "assigned"
-        }]);
-
-      if (insertError) {
-        document.getElementById("assignStatus").innerHTML = `Assign error: ${insertError.message}`;
-        return;
-      }
-
-      const { error: updateError } = await supabaseClient
-        .from("loads")
-        .update({
-          assigned_driver_location_id: driverId,
-          status: "assigned",
-          updated_at: new Date().toISOString()
+  // 🔥 4. SEND SMS (THIS IS THE NEW PART)
+  if (driver.phone) {
+    try {
+      await fetch("/api/send-driver-sms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          to: driver.phone,
+          driverName: driver.driver_name,
+          loadId: load.id,
+          loadNumber: load.load_number,
+          pickup: load.pickup_name,
+          delivery: load.delivery_name
         })
-        .eq("id", loadId);
+      });
 
       document.getElementById("assignStatus").innerHTML =
-        updateError ? `Load update error: ${updateError.message}` : "Driver assigned.";
+        "Driver assigned and SMS sent ✅";
 
-      if (!updateError) {
-        loadLoads();
-        loadDispatches();
-      }
-    }
-
-    async function unassignLoad() {
-      if (!(await checkAccess())) return;
-
-      const loadId = Number(document.getElementById("loadSelect").value);
-      if (!loadId) {
-        document.getElementById("assignStatus").innerHTML = "Select a load first.";
-        return;
-      }
-
-      const { error: updateLoadError } = await supabaseClient
-        .from("loads")
-        .update({
-          assigned_driver_location_id: null,
-          status: "open",
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", loadId);
-
-      const { error: updateDispatchError } = await supabaseClient
-        .from("dispatch_assignments")
-        .update({
-          status: "unassigned",
-          updated_at: new Date().toISOString()
-        })
-        .eq("load_id", loadId)
-        .eq("status", "assigned");
-
+    } catch (err) {
       document.getElementById("assignStatus").innerHTML =
-        updateLoadError || updateDispatchError
-          ? `Unassign error: ${(updateLoadError && updateLoadError.message) || (updateDispatchError && updateDispatchError.message)}`
-          : "Load unassigned.";
-
-      if (!updateLoadError) {
-        loadLoads();
-        loadDispatches();
-      }
+        "Assigned but SMS failed ⚠️";
     }
+  } else {
+    document.getElementById("assignStatus").innerHTML =
+      "Assigned but driver has no phone ⚠️";
+  }
 
-    async function loadDispatches() {
-      const { data, error } = await supabaseClient
-        .from("dispatch_assignments")
-        .select(`
-          *,
-          loads:load_id(load_number),
-          driver_locations:driver_location_id(driver_name,truck_number)
-        `)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        document.getElementById("dispatchList").innerHTML = "Error loading dispatch records.";
-        return;
-      }
-
-      let html = "";
-      data.forEach(row => {
-        html += `
-          <div class="row">
-            <strong>${row.loads?.load_number || "Load"}</strong><br>
-            Driver: ${row.driver_locations?.driver_name || "N/A"}<br>
-            Truck: ${row.driver_locations?.truck_number || "N/A"}<br>
-            Status: <span class="badge ${statusClass(row.status)}">${row.status.toUpperCase()}</span>
-          </div>
-        `;
-      });
-
-      document.getElementById("dispatchList").innerHTML = html || "No dispatch records.";
-    }
-
-    function subscribeRealtime() {
-      supabaseClient
-        .channel("live-loads")
-        .on("postgres_changes", { event: "*", schema: "public", table: "loads" }, () => {
-          loadLoads();
-        })
-        .on("postgres_changes", { event: "*", schema: "public", table: "dispatch_assignments" }, () => {
-          loadDispatches();
-        })
-        .subscribe();
-    }
-
-    (async () => {
-      const ok = await checkAccess();
-      if (ok) {
-        await loadLoads();
-        await loadDrivers();
-        await loadDispatches();
-        subscribeRealtime();
-      }
-    })();
-  </script>
-</body>
-</html>
+  // 🔄 refresh UI
+  loadLoads();
+  loadDispatches();
+}
