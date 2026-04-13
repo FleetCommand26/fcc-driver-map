@@ -338,7 +338,7 @@
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
     );
 
-    // PASTE YOUR TOMTOM API KEY HERE
+    // Y18RLm8evGUvp0THSxz50lZJZMYNqH25
     const TOMTOM_API_KEY = "Y18RLm8evGUvp0THSxz50lZJZMYNqH25";
 
     const map = L.map("map").setView([33.749, -84.388], 6);
@@ -610,19 +610,34 @@
     }
 
     async function geocodePlace(placeName) {
-      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(placeName)}&count=1&language=en&format=json`);
-      const data = await res.json();
+  const tries = [
+    placeName,
+    placeName.replace(",", ""),
+    placeName.replace(/\bFL\b/i, "Florida"),
+    placeName.replace(/\bGA\b/i, "Georgia"),
+    placeName.replace(/\bNC\b/i, "North Carolina"),
+    placeName.replace(/\bSC\b/i, "South Carolina"),
+    placeName.replace(/\bAL\b/i, "Alabama"),
+    placeName.replace(/\bTN\b/i, "Tennessee")
+  ];
 
-      if (!data.results || !data.results.length) {
-        throw new Error("Destination not found");
-      }
+  for (const candidate of tries) {
+    const res = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(candidate)}&count=1&language=en&format=json`
+    );
+    const data = await res.json();
 
+    if (data.results && data.results.length) {
       return {
         lat: data.results[0].latitude,
         lng: data.results[0].longitude,
         label: `${data.results[0].name}, ${data.results[0].admin1 || data.results[0].country || ""}`.replace(/,\s*$/, "")
       };
     }
+  }
+
+  throw new Error("Destination not found. Try full city and state name, like Jacksonville, Florida");
+}
 
     function clearRoute() {
       if (routeLayer) {
