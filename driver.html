@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Driver Tracking - FCC Driver Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: white;
+    }
+
+    .header {
+      background: #111827;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+    }
+
+    .header p {
+      margin-top: 8px;
+      color: #cbd5e1;
+    }
+
+    .section {
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .button {
+      display: inline-block;
+      padding: 12px 18px;
+      background: #2563eb;
+      color: white;
+      text-decoration: none;
+      border-radius: 10px;
+      font-weight: bold;
+      margin-right: 10px;
+      margin-top: 10px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .button.red {
+      background: #dc2626;
+    }
+
+    .small {
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #334155;
+      color: #e2e8f0;
+      font-size: 13px;
+      font-weight: bold;
+      margin-top: 8px;
+    }
+
+    .back-link {
+      color: #93c5fd;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .map-box {
+      width: 100%;
+      height: 350px;
+      border: 0;
+      border-radius: 12px;
+      margin-top: 12px;
+    }
+
+    .coords {
+      background: #0f172a;
+      padding: 12px;
+      border-radius: 10px;
+      margin-top: 12px;
+      line-height: 1.7;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Driver Tracking Page</h1>
+    <p>Enable location sharing so dispatcher, broker, shipper, and owner operator can view active movement</p>
+  </div>
+
+  <div class="section">
+    <div class="card">
+      <a class="back-link" href="/index.html">← Back to Home</a>
+    </div>
+
+    <div class="card">
+      <h2>Tracking Controls</h2>
+      <p class="small">
+        This demo page shows how the driver will allow tracking from their phone.
+      </p>
+
+      <button class="button" onclick="startTracking()">Enable Tracking</button>
+      <button class="button red" onclick="stopTracking()">Stop Tracking</button>
+
+      <div id="status" class="status">Tracking not started</div>
+
+      <div class="coords" id="coords">
+        Latitude: Not available<br>
+        Longitude: Not available<br>
+        Accuracy: Not available
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Driver Map Preview</h2>
+      <p class="small">This map will update to the driver’s current location in the full system later.</p>
+
+      <iframe
+        id="driverMap"
+        class="map-box"
+        src="https://www.google.com/maps?q=Atlanta,GA&output=embed">
+      </iframe>
+    </div>
+
+    <div class="card">
+      <h2>What this page will eventually do</h2>
+      <ul>
+        <li>Driver receives secure tracking link by text</li>
+        <li>Driver taps enable tracking</li>
+        <li>Phone shares current location</li>
+        <li>Location updates show on broker, shipper, and owner dashboards</li>
+        <li>Tracking stops when load completes or driver turns it off</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    let watchId = null;
+
+    function startTracking() {
+      const status = document.getElementById("status");
+      const coords = document.getElementById("coords");
+      const driverMap = document.getElementById("driverMap");
+
+      if (!navigator.geolocation) {
+        status.textContent = "Geolocation is not supported on this device";
+        return;
+      }
+
+      status.textContent = "Requesting location permission...";
+
+      watchId = navigator.geolocation.watchPosition(
+        function(position) {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = position.coords.accuracy;
+
+          status.textContent = "Tracking enabled";
+          coords.innerHTML =
+            "Latitude: " + lat + "<br>" +
+            "Longitude: " + lng + "<br>" +
+            "Accuracy: " + accuracy + " meters";
+
+          driverMap.src = "https://www.google.com/maps?q=" + lat + "," + lng + "&output=embed";
+        },
+        function(error) {
+          status.textContent = "Tracking error: " + error.message;
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 10000,
+          timeout: 15000
+        }
+      );
+    }
+
+    function stopTracking() {
+      const status = document.getElementById("status");
+
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+
+      status.textContent = "Tracking stopped";
+    }
+  </script>
+</body>
+</html>
