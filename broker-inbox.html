@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FCC Broker Dispatch Inbox</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:white; }
+    .wrap { max-width:1400px; margin:20px auto; padding:20px; }
+    .card { background:#1e293b; border-radius:14px; padding:16px; margin-bottom:16px; }
+    .grid { display:grid; grid-template-columns:1fr 1.3fr; gap:16px; }
+    .status { padding:10px 12px; background:#0f172a; border-radius:10px; line-height:1.6; }
+    .row { background:#0f172a; border-radius:10px; padding:12px; margin-bottom:10px; line-height:1.7; }
+    .button { padding:12px 18px; border:none; border-radius:10px; background:#2563eb; color:white; font-weight:bold; cursor:pointer; margin-right:10px; margin-top:8px; }
+    .secondary { background:#334155; }
+    .red { background:#dc2626; }
+    .green { background:#166534; }
+    .orange { background:#c2410c; }
+    .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:bold; }
+    .declined_load { background:#991b1b; color:white; }
+    .pod_uploaded { background:#166534; color:white; }
+    .general { background:#334155; color:white; }
+    .count-red { background:#dc2626; color:white; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:bold; }
+    .count-green { background:#166534; color:white; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:bold; }
+    .count-blue { background:#2563eb; color:white; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:bold; }
+    .unread { border:1px solid #2563eb; }
+    .timeline { padding-left:18px; }
+    .timeline-item { margin-bottom:10px; }
+    select, textarea { width:100%; padding:12px; border:none; border-radius:10px; box-sizing:border-box; margin:8px 0 12px; }
+    @media (max-width: 900px) { .grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Broker Dispatch Inbox</h1>
+      <button class="button" onclick="location.href='/auth.html'">Login</button>
+      <button class="button secondary" onclick="location.href='/loadboard.html'">Load Board</button>
+      <button class="button secondary" onclick="location.href='/dispatch-timeline.html'">Dispatch Timeline</button>
+      <button class="button red" onclick="signOut()">Sign Out</button>
+      <div id="authBox" class="status">Checking session...</div>
+    </div>
+
+    <div class="card">
+      <span class="count-red">Declined Unread: <span id="declinedCount">0</span></span>
+      <span class="count-green" style="margin-left:10px;">POD Unread: <span id="podCount">0</span></span>
+      <span class="count-blue" style="margin-left:10px;">All Unread: <span id="allCount">0</span></span>
+      <button class="button secondary" onclick="markAllRead()">Mark All Read</button>
+      <button class="button green" onclick="syncNotificationsFromData()">Sync Notifications</button>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Notifications</h2>
+        <div id="notificationList">Loading notifications...</div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>Selected Notification</h2>
+          <div id="notificationDetail">Select a notification.</div>
+        </div>
+
+        <div class="card">
+          <h2>Quick Reassign</h2>
+          <select id="reassignLoadSelect">
+            <option value="">Select load</option>
+          </select>
+          <select id="reassignDriverSelect">
+            <option value="">Select driver</option>
+          </select>
+          <textarea id="reassignNote" placeholder="Reason or note"></textarea>
+          <button class="button orange" onclick="reassignLoad()">Reassign Driver</button>
+          <div id="reassignStatus" class="status">No reassignment yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const supabaseClient = supabase.createClient(
+      "https://mubhwsjppmebuwpmsuwg.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
+    );
+
+    let currentUser = null;
+    let currentProfile = null;
+    let selectedNotification = null;
+    let selectedLoadId = null;
+
+    async function signOut() {
+      await supabaseClient.auth.signOut();
+      location.href = "/auth.html";
+    }
+
+    async function checkAccess() {
+      const { data: userData } = await supabaseClient.auth.getUser();
+      currentUser = userData.user;
+
+      if (!currentUser) {
+        document.getElementById("authBox").innerHTML = "Not signed in.";
+        return false;
+      }
+
+      const { data: profile } = await supabaseClient
+        .from("profiles")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .maybeSingle();
+
+      currentProfile = profile;
+
+      if (!profile || !["admin","broker"].includes(profile.role)) {
+        document.getElementById("authBox").innerHTML = "Access denied. Broker or admin required.";
+        return false;
+      }
+
+      document.getElementById("authBox").innerHTML =
+        `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
+      return true;
+    }
+
+    async function addNotification(loadId, eventType, title, message, brokerCompany) {
+      const { error } = await supabaseClient
+        .from("broker_notifications")
+        .insert([{
+          load_id: loadId,
+          event_type: eventType,
+          title,
+          message,
+          broker_company: brokerCompany,
+          is_read: false
+        }]);
+      return error;
+    }
+
+    async function syncNotificationsFromData() {
+      if (!(await checkAccess())) return;
+
+      const companyFilter = currentProfile.role === "admin" ? null : currentProfile.company_name;
+
+      const { data: declinedLoads } = await supabaseClient
+        .from("loads")
+        .select("*")
+        .eq("status", "declined");
+
+      const { data: podLoads } = await supabaseClient
+        .from("loads")
+        .select("*")
+        .not("pod_path", "is", null);
+
+      for (const load of (declinedLoads || [])) {
+        if (companyFilter && load.broker_company !== companyFilter) continue;
+
+        const { data: existing } = await supabaseClient
+          .from("broker_notifications")
+          .select("id")
+          .eq("load_id", load.id)
+          .eq("event_type", "declined_load")
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          await addNotification(
+            load.id,
+            "declined_load",
+            `Load ${load.load_number} was declined`,
+            `Driver declined load ${load.load_number}.`,
+            load.broker_company
+          );
+        }
+      }
+
+      for (const load of (podLoads || [])) {
+        if (companyFilter && load.broker_company !== companyFilter) continue;
+
+        const { data: existing } = await supabaseClient
+          .from("broker_notifications")
+          .select("id")
+          .eq("load_id", load.id)
+          .eq("event_type", "pod_uploaded")
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          await addNotification(
+            load.id,
+            "pod_uploaded",
+            `POD uploaded for ${load.load_number}`,
+            `Proof of delivery uploaded for load ${load.load_number}.`,
+            load.broker_company
+          );
+        }
+      }
+
+      loadNotifications();
+    }
+
+    async function markRead(notificationId) {
+      await supabaseClient
+        .from("broker_notifications")
+        .update({ is_read: true })
+        .eq("id", notificationId);
+
+      loadNotifications();
+    }
+
+    async function markAllRead() {
+      if (!(await checkAccess())) return;
+
+      let query = supabaseClient
+        .from("broker_notifications")
+        .update({ is_read: true })
+        .eq("is_read", false);
+
+      if (currentProfile.role !== "admin") {
+        query = query.eq("broker_company", currentProfile.company_name);
+      }
+
+      await query;
+      loadNotifications();
+    }
+
+    async function getSignedPodUrl(path) {
+      if (!path) return null;
+      const { data, error } = await supabaseClient
+        .storage
+        .from("pod-files")
+        .createSignedUrl(path, 3600);
+
+      if (error) return null;
+      return data.signedUrl;
+    }
+
+    async function showNotification(notification) {
+      selectedNotification = notification;
+      selectedLoadId = notification.load_id;
+
+      await markRead(notification.id);
+
+      const { data: load } = await supabaseClient
+        .from("loads")
+        .select("*")
+        .eq("id", notification.load_id)
+        .maybeSingle();
+
+      const { data: dispatches } = await supabaseClient
+        .from("dispatch_assignments")
+        .select(`
+          *,
+          driver_locations:driver_location_id(driver_name, truck_number)
+        `)
+        .eq("load_id", notification.load_id)
+        .order("created_at", { ascending: false });
+
+      const { data: events } = await supabaseClient
+        .from("trip_events")
+        .select("*")
+        .eq("load_id", notification.load_id)
+        .order("created_at", { ascending: true });
+
+      const podUrl = load?.pod_path ? await getSignedPodUrl(load.pod_path) : null;
+
+      const dispatchHtml = (dispatches || []).map(d => `
+        <div class="row">
+          Driver: ${d.driver_locations?.driver_name || "N/A"}<br>
+          Truck: ${d.driver_locations?.truck_number || "N/A"}<br>
+          Status: ${d.status}<br>
+          Note: ${d.note || "N/A"}
+        </div>
+      `).join("");
+
+      const eventHtml = (events || []).map(ev => `
+        <div class="timeline-item">
+          <strong>${ev.event_type}</strong> — ${new Date(ev.created_at).toLocaleString()}<br>
+          ${ev.note || ""}
+        </div>
+      `).join("");
+
+      document.getElementById("notificationDetail").innerHTML = `
+        <div class="row">
+          <strong>${notification.title}</strong><br>
+          Message: ${notification.message || "N/A"}<br>
+          Created: ${new Date(notification.created_at).toLocaleString()}<br>
+          Event Type: <span class="badge ${notification.event_type}">${notification.event_type}</span>
+        </div>
+
+        <div class="row">
+          <strong>Load ${load?.load_number || "N/A"}</strong><br>
+          Broker: ${load?.broker_company || "N/A"}<br>
+          Pickup: ${load?.pickup_name || "N/A"}<br>
+          Delivery: ${load?.delivery_name || "N/A"}<br>
+          Status: ${load?.status || "N/A"}<br>
+          Decline Reason: ${load?.decline_reason || "N/A"}<br>
+          ${podUrl ? `<a href="${podUrl}" target="_blank" style="color:#93c5fd;">View POD</a>` : "No POD uploaded"}
+        </div>
+
+        <h3>Dispatch History</h3>
+        ${dispatchHtml || "<div class='row'>No dispatch records.</div>"}
+
+        <h3>Status Timeline</h3>
+        <div class="timeline">
+          ${eventHtml || "No timeline events."}
+        </div>
+      `;
+
+      document.getElementById("reassignLoadSelect").value = String(notification.load_id);
+    }
+
+    async function loadDriversForReassign() {
+      const { data, error } = await supabaseClient
+        .from("driver_locations")
+        .select("*")
+        .order("updated_at", { ascending: false });
+
+      if (error) return;
+
+      let options = `<option value="">Select new driver</option>`;
+      data.forEach(driver => {
+        options += `<option value="${driver.id}">${driver.driver_name || "Driver"} | Truck ${driver.truck_number || "N/A"} | ${driver.driver_status || "N/A"}</option>`;
+      });
+
+      document.getElementById("reassignDriverSelect").innerHTML = options;
+    }
+
+    async function loadNotifications() {
+      let query = supabaseClient
+        .from("broker_notifications")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (currentProfile.role !== "admin") {
+        query = query.eq("broker_company", currentProfile.company_name);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        document.getElementById("notificationList").innerHTML = "Error loading notifications.";
+        return;
+      }
+
+      const declinedUnread = (data || []).filter(n => n.event_type === "declined_load" && !n.is_read).length;
+      const podUnread = (data || []).filter(n => n.event_type === "pod_uploaded" && !n.is_read).length;
+      const allUnread = (data || []).filter(n => !n.is_read).length;
+
+      document.getElementById("declinedCount").textContent = declinedUnread;
+      document.getElementById("podCount").textContent = podUnread;
+      document.getElementById("allCount").textContent = allUnread;
+
+      let html = "";
+      let loadOptions = `<option value="">Select load</option>`;
+
+      (data || []).forEach(n => {
+        if (n.load_id) {
+          loadOptions += `<option value="${n.load_id}">Load ID ${n.load_id}</option>`;
+        }
+
+        html += `
+          <div class="row ${n.is_read ? "" : "unread"}">
+            <strong>${n.title}</strong><br>
+            ${n.message || ""}<br>
+            <span class="badge ${n.event_type}">${n.event_type}</span><br>
+            Read: ${n.is_read ? "Yes" : "No"}<br>
+            Created: ${new Date(n.created_at).toLocaleString()}<br>
+            <button class="button" onclick='showNotification(${JSON.stringify(n).replace(/'/g, "&apos;")})'>Open</button>
+            <button class="button secondary" onclick="markRead(${n.id})">Mark Read</button>
+          </div>
+        `;
+      });
+
+      document.getElementById("notificationList").innerHTML = html || "No notifications.";
+      document.getElementById("reassignLoadSelect").innerHTML = loadOptions;
+    }
+
+    async function addTripEvent(loadId, eventType, note = "") {
+      return await supabaseClient
+        .from("trip_events")
+        .insert([{
+          load_id: loadId,
+          event_type: eventType,
+          note,
+          created_by: currentUser.id
+        }]);
+    }
+
+    async function reassignLoad() {
+      const loadId = Number(document.getElementById("reassignLoadSelect").value);
+      const driverId = Number(document.getElementById("reassignDriverSelect").value);
+      const note = document.getElementById("reassignNote").value.trim();
+
+      if (!loadId || !driverId) {
+        document.getElementById("reassignStatus").innerHTML = "Select both load and driver.";
+        return;
+      }
+
+      const { error: closeOldError } = await supabaseClient
+        .from("dispatch_assignments")
+        .update({
+          status: "unassigned",
+          note: note || "Reassigned from broker inbox",
+          updated_at: new Date().toISOString()
+        })
+        .eq("load_id", loadId)
+        .in("status", ["assigned", "declined"]);
+
+      const { error: insertError } = await supabaseClient
+        .from("dispatch_assignments")
+        .insert([{
+          load_id: loadId,
+          driver_location_id: driverId,
+          assigned_by: currentUser.id,
+          status: "assigned",
+          note: note || "Reassigned from broker inbox"
+        }]);
+
+      const { error: loadUpdateError } = await supabaseClient
+        .from("loads")
+        .update({
+          assigned_driver_location_id: driverId,
+          status: "assigned",
+          decline_reason: null,
+          last_reassigned_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", loadId);
+
+      await addTripEvent(loadId, "assigned", note || "Load reassigned from broker inbox");
+
+      const finalError = closeOldError || insertError || loadUpdateError;
+
+      document.getElementById("reassignStatus").innerHTML =
+        finalError ? `Reassign error: ${finalError.message}` : "Load reassigned successfully.";
+
+      if (!finalError) {
+        loadNotifications();
+        if (selectedNotification && selectedNotification.load_id === loadId) {
+          const refreshed = await supabaseClient.from("broker_notifications").select("*").eq("load_id", loadId).order("created_at", { ascending: false }).limit(1);
+          if (refreshed.data && refreshed.data.length) {
+            showNotification(refreshed.data[0]);
+          }
+        }
+      }
+    }
+
+    function subscribeRealtime() {
+      supabaseClient
+        .channel("broker-inbox-live")
+        .on("postgres_changes", { event: "*", schema: "public", table: "broker_notifications" }, () => loadNotifications())
+        .on("postgres_changes", { event: "*", schema: "public", table: "loads" }, () => {
+          loadNotifications();
+          if (selectedNotification) showNotification(selectedNotification);
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "trip_events" }, () => {
+          if (selectedNotification) showNotification(selectedNotification);
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "dispatch_assignments" }, () => {
+          if (selectedNotification) showNotification(selectedNotification);
+        })
+        .subscribe();
+    }
+
+    (async () => {
+      const ok = await checkAccess();
+      if (ok) {
+        await loadDriversForReassign();
+        await loadNotifications();
+        subscribeRealtime();
+      }
+    })();
+  </script>
+</body>
+</html>
