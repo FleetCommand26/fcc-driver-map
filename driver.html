@@ -1,72 +1,36 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Driver Tracking - FCC Live Driver View</title>
+  <title>Driver Offers</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
   <style>
-    body { margin: 0; font-family: Arial, sans-serif; background: #0f172a; color: white; }
-    .header { background: #111827; padding: 20px; text-align: center; }
-    .header h1 { margin: 0; font-size: 28px; }
-    .header p { margin-top: 8px; color: #cbd5e1; }
-    .section { padding: 20px; max-width: 1200px; margin: 0 auto; }
-    .card { background: #1e293b; border-radius: 14px; padding: 16px; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
-    .back-link { color: #93c5fd; text-decoration: none; font-weight: bold; }
-    .button { display: inline-block; padding: 12px 18px; background: #2563eb; color: white; border-radius: 10px; font-weight: bold; border: none; cursor: pointer; margin-top: 10px; margin-right: 10px; }
-    .button.red { background: #dc2626; }
-    .button.green { background: #166534; }
-    .input { width: 100%; padding: 12px; border-radius: 10px; border: none; margin-top: 8px; margin-bottom: 12px; font-size: 16px; box-sizing: border-box; }
-    .status { display: inline-block; padding: 8px 12px; border-radius: 999px; background: #334155; color: #e2e8f0; font-size: 13px; font-weight: bold; margin-top: 8px; }
-    .coords { background: #0f172a; padding: 12px; border-radius: 10px; margin-top: 12px; line-height: 1.8; }
-    #map { width: 100%; height: 600px; border-radius: 14px; overflow: hidden; }
-    .small { color: #cbd5e1; font-size: 14px; }
+    body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:white; }
+    .wrap { max-width:1000px; margin:20px auto; padding:20px; }
+    .card { background:#1e293b; border-radius:14px; padding:16px; margin-bottom:16px; }
+    .row { background:#0f172a; border-radius:10px; padding:12px; margin-bottom:10px; line-height:1.7; }
+    .status { padding:10px 12px; background:#0f172a; border-radius:10px; line-height:1.6; }
+    button { padding:12px 18px; border:none; border-radius:10px; background:#2563eb; color:white; font-weight:bold; cursor:pointer; margin-right:10px; margin-top:8px; }
+    .green { background:#166534; }
+    .red { background:#dc2626; }
+    .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:bold; }
+    .assigned { background:#c2410c; color:white; }
+    .accepted { background:#166534; color:white; }
+    .declined { background:#991b1b; color:white; }
   </style>
 </head>
 <body>
-
-  <div class="header">
-    <h1>Driver Tracking Page</h1>
-    <p>Live driver map and tracking controls</p>
-  </div>
-
-  <div class="section">
+  <div class="wrap">
     <div class="card">
-      <a class="back-link" href="/index.html">← Back to Home</a>
+      <h1>Driver Offers</h1>
+      <button onclick="location.href='/auth.html'">Login</button>
+      <button onclick="signOut()">Sign Out</button>
+      <div id="authBox" class="status">Checking session...</div>
     </div>
 
     <div class="card">
-      <h2>Driver Information</h2>
-      <input class="input" id="driverName" placeholder="Driver Name" />
-      <input class="input" id="truckNumber" placeholder="Truck Number" />
-      <input class="input" id="loadNumber" placeholder="Load Number" />
-      <input class="input" id="driverStatus" placeholder="Status (In Transit)" />
-      <button class="button green" onclick="saveDriver()">Save Driver Info</button>
-    </div>
-
-    <div class="card">
-      <h2>Tracking Controls</h2>
-      <button class="button" onclick="startTracking()">Enable Tracking</button>
-      <button class="button red" onclick="stopTracking()">Stop Tracking</button>
-      <div id="status" class="status">Tracking not started</div>
-
-      <div class="coords" id="coords">
-        Latitude: Not available<br>
-        Longitude: Not available<br>
-        Accuracy: Not available<br>
-        Last Update: Not available
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Driver Map</h2>
-      <p class="small">Street or satellite driver view with live location updates.</p>
-      <button class="button" onclick="setStreetView()">Street View</button>
-      <button class="button" onclick="setSatelliteView()">Satellite View</button>
-      <div id="map"></div>
+      <h2>My Assigned Loads</h2>
+      <div id="offersList">Loading offers...</div>
     </div>
   </div>
 
@@ -76,150 +40,161 @@
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
     );
 
-    const TOMTOM_API_KEY = "Y18RLm8evGUvp0THSxz50lZJZMYNqH25";
+    let currentUser = null;
+    let currentProfile = null;
+    let myDriverRow = null;
 
-    const tomtomStreet = L.tileLayer(`https://{s}.api.tomtom.com/map/1/tile/basic/main/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`, {
-      subdomains: ["a","b","c","d"], maxZoom: 22
-    });
-
-    const tomtomSatellite = L.tileLayer(`https://api.tomtom.com/map/1/tile/sat/main/{z}/{x}/{y}.jpg?key=${TOMTOM_API_KEY}`, {
-      maxZoom: 19
-    });
-
-    const tomtomHybrid = L.tileLayer(`https://{s}.api.tomtom.com/map/1/tile/hybrid/main/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`, {
-      subdomains: ["a","b","c","d"], maxZoom: 22
-    });
-
-    const map = L.map("map", { zoomControl: true, layers: [tomtomStreet] }).setView([33.749, -84.388], 6);
-
-    let driverMarker = null;
-    let watchId = null;
-    let currentRowId = null;
-    let currentBase = "street";
-
-    function setStreetView() {
-      currentBase = "street";
-      if (map.hasLayer(tomtomSatellite)) map.removeLayer(tomtomSatellite);
-      if (map.hasLayer(tomtomHybrid)) map.removeLayer(tomtomHybrid);
-      if (!map.hasLayer(tomtomStreet)) map.addLayer(tomtomStreet);
+    async function signOut() {
+      await supabaseClient.auth.signOut();
+      location.href = "/auth.html";
     }
 
-    function setSatelliteView() {
-      currentBase = "satellite";
-      if (map.hasLayer(tomtomStreet)) map.removeLayer(tomtomStreet);
-      if (!map.hasLayer(tomtomSatellite)) map.addLayer(tomtomSatellite);
-      if (!map.hasLayer(tomtomHybrid)) map.addLayer(tomtomHybrid);
+    async function checkAccess() {
+      const { data: userData } = await supabaseClient.auth.getUser();
+      currentUser = userData.user;
+
+      if (!currentUser) {
+        document.getElementById("authBox").innerHTML = "Not signed in.";
+        return false;
+      }
+
+      const { data: profile } = await supabaseClient
+        .from("profiles")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .maybeSingle();
+
+      currentProfile = profile;
+
+      if (!profile || profile.role !== "driver") {
+        document.getElementById("authBox").innerHTML = "Access denied. Driver role required.";
+        return false;
+      }
+
+      document.getElementById("authBox").innerHTML =
+        `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
+
+      const { data: driverRows } = await supabaseClient
+        .from("driver_locations")
+        .select("*")
+        .eq("created_by", currentUser.id)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+
+      myDriverRow = driverRows && driverRows.length ? driverRows[0] : null;
+      return true;
     }
 
-    async function saveDriver() {
-      const driverName = document.getElementById("driverName").value || "Unknown Driver";
-      const truckNumber = document.getElementById("truckNumber").value || "Unknown Truck";
-      const loadNumber = document.getElementById("loadNumber").value || "Unknown Load";
-      const driverStatus = document.getElementById("driverStatus").value || "Waiting";
+    async function acceptOffer(dispatchId, loadId) {
+      const { error: dErr } = await supabaseClient
+        .from("dispatch_assignments")
+        .update({
+          status: "accepted",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", dispatchId);
+
+      const { error: lErr } = await supabaseClient
+        .from("loads")
+        .update({
+          status: "accepted",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", loadId);
+
+      if (dErr || lErr) {
+        alert((dErr && dErr.message) || (lErr && lErr.message));
+        return;
+      }
+
+      loadOffers();
+    }
+
+    async function declineOffer(dispatchId, loadId) {
+      const { error: dErr } = await supabaseClient
+        .from("dispatch_assignments")
+        .update({
+          status: "declined",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", dispatchId);
+
+      const { error: lErr } = await supabaseClient
+        .from("loads")
+        .update({
+          status: "declined",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", loadId);
+
+      if (dErr || lErr) {
+        alert((dErr && dErr.message) || (lErr && lErr.message));
+        return;
+      }
+
+      loadOffers();
+    }
+
+    async function loadOffers() {
+      if (!myDriverRow) {
+        document.getElementById("offersList").innerHTML = "No driver profile row found for this account.";
+        return;
+      }
 
       const { data, error } = await supabaseClient
-        .from("driver_locations")
-        .insert([{
-          driver_name: driverName,
-          truck_number: truckNumber,
-          load_number: loadNumber,
-          driver_status: driverStatus,
-          is_tracking: false
-        }])
-        .select()
-        .single();
+        .from("dispatch_assignments")
+        .select(`
+          *,
+          loads:load_id(*)
+        `)
+        .eq("driver_location_id", myDriverRow.id)
+        .order("created_at", { ascending: false });
 
       if (error) {
-        alert("Error saving driver info: " + error.message);
+        document.getElementById("offersList").innerHTML = "Error loading offers.";
         return;
       }
 
-      currentRowId = data.id;
-      alert("Driver info saved");
+      let html = "";
+      data.forEach(row => {
+        html += `
+          <div class="row">
+            <strong>Load ${row.loads?.load_number || "N/A"}</strong><br>
+            Pickup: ${row.loads?.pickup_name || "N/A"}<br>
+            Delivery: ${row.loads?.delivery_name || "N/A"}<br>
+            Equipment: ${row.loads?.equipment_type || "N/A"}<br>
+            Weight: ${row.loads?.weight_lbs || "N/A"}<br>
+            Rate: ${row.loads?.rate || "N/A"}<br>
+            Dispatch Status: <span class="badge ${row.status}">${row.status.toUpperCase()}</span><br>
+            Load Status: <span class="badge ${row.loads?.status || "assigned"}">${(row.loads?.status || "assigned").toUpperCase()}</span><br>
+            <button class="green" onclick="acceptOffer(${row.id}, ${row.load_id})">Accept</button>
+            <button class="red" onclick="declineOffer(${row.id}, ${row.load_id})">Decline</button>
+          </div>
+        `;
+      });
+
+      document.getElementById("offersList").innerHTML = html || "No offers found.";
     }
 
-    async function startTracking() {
-      const status = document.getElementById("status");
-      const coords = document.getElementById("coords");
-
-      if (!currentRowId) {
-        alert("Please save driver info first");
-        return;
-      }
-
-      if (!navigator.geolocation) {
-        status.textContent = "Geolocation is not supported on this device";
-        return;
-      }
-
-      status.textContent = "Requesting location permission...";
-
-      watchId = navigator.geolocation.watchPosition(
-        async function(position) {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          const accuracy = position.coords.accuracy;
-          const updatedAt = new Date().toLocaleString();
-
-          await supabaseClient
-            .from("driver_locations")
-            .update({
-              lat: lat,
-              lng: lng,
-              accuracy: accuracy,
-              is_tracking: true,
-              updated_at: new Date().toISOString(),
-              driver_status: document.getElementById("driverStatus").value || "In Transit"
-            })
-            .eq("id", currentRowId);
-
-          status.textContent = "Tracking enabled";
-          coords.innerHTML =
-            "Latitude: " + lat + "<br>" +
-            "Longitude: " + lng + "<br>" +
-            "Accuracy: " + accuracy + " meters<br>" +
-            "Last Update: " + updatedAt;
-
-          if (driverMarker) {
-            driverMarker.setLatLng([lat, lng]);
-          } else {
-            driverMarker = L.marker([lat, lng]).addTo(map).bindPopup("My Truck");
-          }
-
-          const zoomLevel = currentBase === "satellite" ? 19 : 20;
-          map.flyTo([lat, lng], zoomLevel, { animate: true, duration: 0.8 });
-        },
-        function(error) {
-          status.textContent = "Tracking error: " + error.message;
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 1000,
-          timeout: 10000
-        }
-      );
+    function subscribeRealtime() {
+      supabaseClient
+        .channel("driver-offers")
+        .on("postgres_changes", { event: "*", schema: "public", table: "dispatch_assignments" }, () => {
+          loadOffers();
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "loads" }, () => {
+          loadOffers();
+        })
+        .subscribe();
     }
 
-    async function stopTracking() {
-      const status = document.getElementById("status");
-
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
+    (async () => {
+      const ok = await checkAccess();
+      if (ok) {
+        await loadOffers();
+        subscribeRealtime();
       }
-
-      if (currentRowId) {
-        await supabaseClient
-          .from("driver_locations")
-          .update({
-            is_tracking: false,
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", currentRowId);
-      }
-
-      status.textContent = "Tracking stopped";
-    }
+    })();
   </script>
 </body>
 </html>
