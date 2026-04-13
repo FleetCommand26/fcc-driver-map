@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FCC Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:white; }
+    .wrap { max-width:700px; margin:40px auto; padding:20px; }
+    .card { background:#1e293b; border-radius:14px; padding:20px; margin-bottom:16px; }
+    input, select { width:100%; padding:12px; margin:8px 0 12px; border:none; border-radius:10px; box-sizing:border-box; }
+    button { padding:12px 18px; border:none; border-radius:10px; background:#2563eb; color:white; font-weight:bold; cursor:pointer; margin-right:10px; margin-top:10px; }
+    .secondary { background:#334155; }
+    .status { margin-top:12px; padding:10px 12px; background:#0f172a; border-radius:10px; line-height:1.6; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>FCC Login</h1>
+      <p>Sign up or sign in, then save your role and company.</p>
+    </div>
+
+    <div class="card">
+      <h2>Account</h2>
+      <input id="email" type="email" placeholder="Email" />
+      <input id="password" type="password" placeholder="Password" />
+
+      <button onclick="signUp()">Sign Up</button>
+      <button class="secondary" onclick="signIn()">Sign In</button>
+      <button class="secondary" onclick="signOut()">Sign Out</button>
+
+      <div id="authStatus" class="status">Not signed in.</div>
+    </div>
+
+    <div class="card">
+      <h2>Profile</h2>
+      <select id="role">
+        <option value="broker">Broker</option>
+        <option value="shipper">Shipper</option>
+        <option value="owner">Owner Operator</option>
+        <option value="driver">Driver</option>
+      </select>
+
+      <input id="companyName" placeholder="Company Name" />
+      <button onclick="saveProfile()">Save Profile</button>
+
+      <div id="profileStatus" class="status">Profile not loaded.</div>
+    </div>
+
+    <div class="card">
+      <h2>Go To</h2>
+      <button onclick="goBroker()">Broker</button>
+      <button onclick="goShipper()">Shipper</button>
+      <button onclick="goOwner()">Owner</button>
+      <button onclick="goDriver()">Driver</button>
+    </div>
+  </div>
+
+  <script>
+    const supabaseClient = supabase.createClient(
+      "https://mubhwsjppmebuwpmsuwg.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
+    );
+
+    async function refreshAuth() {
+      const { data: userData } = await supabaseClient.auth.getUser();
+      const user = userData.user;
+      document.getElementById("authStatus").innerHTML = user
+        ? `Signed in as: ${user.email}<br>User ID: ${user.id}`
+        : "Not signed in.";
+
+      if (user) {
+        const { data, error } = await supabaseClient
+          .from("profiles")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (!error && data) {
+          document.getElementById("role").value = data.role || "broker";
+          document.getElementById("companyName").value = data.company_name || "";
+          document.getElementById("profileStatus").innerHTML =
+            `Profile loaded.<br>Role: ${data.role}<br>Company: ${data.company_name}`;
+        } else {
+          document.getElementById("profileStatus").innerHTML = "No profile saved yet.";
+        }
+      }
+    }
+
+    async function signUp() {
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
+
+      const { error } = await supabaseClient.auth.signUp({ email, password });
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      alert("Sign-up submitted. If email confirmation is on in Supabase, confirm your email before signing in.");
+      await refreshAuth();
+    }
+
+    async function signIn() {
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
+
+      const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      await refreshAuth();
+    }
+
+    async function signOut() {
+      await supabaseClient.auth.signOut();
+      await refreshAuth();
+    }
+
+    async function saveProfile() {
+      const { data: userData } = await supabaseClient.auth.getUser();
+      const user = userData.user;
+
+      if (!user) {
+        alert("Sign in first.");
+        return;
+      }
+
+      const payload = {
+        user_id: user.id,
+        email: user.email,
+        role: document.getElementById("role").value,
+        company_name: document.getElementById("companyName").value.trim()
+      };
+
+      const { error } = await supabaseClient
+        .from("profiles")
+        .upsert(payload);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      document.getElementById("profileStatus").innerHTML =
+        `Profile saved.<br>Role: ${payload.role}<br>Company: ${payload.company_name}`;
+    }
+
+    function goBroker() { location.href = "/broker.html"; }
+    function goShipper() { location.href = "/shipper.html"; }
+    function goOwner() { location.href = "/owner.html"; }
+    function goDriver() { location.href = "/driver.html"; }
+
+    refreshAuth();
+  </script>
+</body>
+</html>
