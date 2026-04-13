@@ -10,7 +10,9 @@ module.exports = async (req, res) => {
       loadNumber,
       pickup,
       delivery,
-      driverName
+      driverName,
+      dispatchAssignmentId,
+      replyMinutes = 5
     } = req.body || {};
 
     if (!to) {
@@ -20,6 +22,8 @@ module.exports = async (req, res) => {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!accountSid || !authToken || !messagingServiceSid) {
       return res.status(500).json({ error: "Missing Twilio environment variables" });
@@ -32,7 +36,8 @@ module.exports = async (req, res) => {
       `Pickup: ${pickup || "N/A"}\n` +
       `Delivery: ${delivery || "N/A"}\n\n` +
       `Reply YES ${loadId} to accept.\n` +
-      `Reply NO ${loadId} to decline.`;
+      `Reply NO ${loadId} to decline.\n` +
+      `Reply within ${replyMinutes} minutes.`;
 
     const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
 
@@ -61,6 +66,27 @@ module.exports = async (req, res) => {
         error: data.message || "Twilio send failed",
         details: data
       });
+    }
+
+    if (dispatchAssignmentId && supabaseUrl && serviceRole) {
+      const deadline = new Date(Date.now() + replyMinutes * 60 * 1000).toISOString();
+
+      await fetch(
+        `${supabaseUrl}/rest/v1/dispatch_assignments?id=eq.${dispatchAssignmentId}`,
+        {
+          method: "PATCH",
+          headers: {
+            apikey: serviceRole,
+            Authorization: `Bearer ${serviceRole}`,
+            "Content-Type": "application/json",
+            Prefer: "return=minimal"
+          },
+          body: JSON.stringify({
+            sms_sent_at: new Date().toISOString(),
+            sms_reply_deadline_at: deadline
+          })
+        }
+      );
     }
 
     return res.status(200).json({
