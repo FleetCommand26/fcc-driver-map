@@ -2,9 +2,111 @@
 <html>
 <head>
   <title>FCC Driver Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: white;
+    }
+
+    .header {
+      padding: 20px;
+      background: #111827;
+      text-align: center;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+    }
+
+    .header p {
+      margin-top: 8px;
+      color: #cbd5e1;
+    }
+
+    .section {
+      padding: 20px;
+    }
+
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .map-box {
+      width: 100%;
+      height: 450px;
+      border: 0;
+      border-radius: 12px;
+    }
+
+    .button {
+      display: inline-block;
+      padding: 12px 18px;
+      background: #2563eb;
+      color: white;
+      text-decoration: none;
+      border-radius: 10px;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    .small {
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+
+    ul {
+      padding-left: 18px;
+    }
+  </style>
 </head>
 <body>
-  <h1>FCC Driver Map</h1>
-  <p>Your system is coming to life 🔥</p>
+  <div class="header">
+    <h1>FCC Driver Map</h1>
+    <p>Live driver visibility for brokers, shippers, and owner operators</p>
+  </div>
+
+  <div class="section">
+    <div class="card">
+      <h2>Map Preview</h2>
+      <p class="small">This is your first visual map section. Right now it shows Atlanta as your starting point.</p>
+
+      <iframe
+        class="map-box"
+        src="https://www.google.com/maps?q=Atlanta,GA&output=embed">
+      </iframe>
+    </div>
+
+    <div class="card">
+      <h2>What this system will do</h2>
+      <ul>
+        <li>Drivers receive a tracking link</li>
+        <li>Drivers enable location sharing</li>
+        <li>Brokers can see active trucks on a map</li>
+        <li>Shippers can see assigned shipment locations</li>
+        <li>Owner operators can see their own fleet</li>
+        <li>Smart matching can ping the nearest active subscribed carrier</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Next Build Phase</h2>
+      <p class="small">
+        After this, we will add buttons and simple pages for:
+      </p>
+      <ul>
+        <li>Broker Dashboard</li>
+        <li>Shipper Dashboard</li>
+        <li>Owner Operator Dashboard</li>
+        <li>Driver Tracking Link Page</li>
+      </ul>
+    </div>
+  </div>
 </body>
 </html>
