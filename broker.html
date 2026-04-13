@@ -1,8 +1,17 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Broker Dashboard - FCC Driver Map</title>
+  <title>Broker Dashboard - FCC Live Multi-Driver Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <style>
     body {
       margin: 0;
@@ -17,8 +26,20 @@
       text-align: center;
     }
 
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+    }
+
+    .header p {
+      margin-top: 8px;
+      color: #cbd5e1;
+    }
+
     .section {
       padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
     }
 
     .card {
@@ -28,22 +49,10 @@
       margin-bottom: 16px;
     }
 
-    .map-box {
-      width: 100%;
-      height: 420px;
-      border: 0;
-      border-radius: 12px;
-    }
-
     .back-link {
       color: #93c5fd;
       text-decoration: none;
       font-weight: bold;
-    }
-
-    .small {
-      color: #cbd5e1;
-      font-size: 14px;
     }
 
     .status {
@@ -57,67 +66,235 @@
       margin-top: 8px;
     }
 
-    .info {
-      line-height: 1.8;
+    .small {
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+
+    #map {
+      width: 100%;
+      height: 500px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+    }
+
+    .driver-list {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .driver-item {
+      background: #0f172a;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 10px;
+      line-height: 1.7;
+    }
+
+    .driver-item strong {
+      color: #ffffff;
+    }
+
+    .driver-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #1d4ed8;
+      color: white;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .top-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .stat-box {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-box h3 {
+      margin: 0 0 8px 0;
+      font-size: 15px;
+      color: #cbd5e1;
+    }
+
+    .stat-box p {
+      margin: 0;
+      font-size: 28px;
+      font-weight: bold;
+    }
+
+    .leaflet-popup-content-wrapper {
+      border-radius: 10px;
+    }
+
+    .leaflet-popup-content {
+      color: #111827;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .top-stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
     }
   </style>
 </head>
 <body>
+
   <div class="header">
     <h1>Broker Dashboard</h1>
-    <p>View tracked driver movement and load activity</p>
+    <p>Live multi-driver tracking map</p>
   </div>
 
   <div class="section">
     <div class="card">
       <a class="back-link" href="/index.html">← Back to Home</a>
+      <div id="systemStatus" class="status">LOADING LIVE MAP</div>
     </div>
 
-    <div class="card">
-      <h2>Live Driver Details</h2>
-      <div class="info" id="driverInfo">
-        No driver data found yet.
+    <div class="top-stats">
+      <div class="stat-box">
+        <h3>Total Drivers</h3>
+        <p id="totalDrivers">0</p>
       </div>
-      <div id="trackingStatus" class="status">WAITING FOR DRIVER</div>
+      <div class="stat-box">
+        <h3>Tracking Active</h3>
+        <p id="trackingActive">0</p>
+      </div>
+      <div class="stat-box">
+        <h3>Tracking Off</h3>
+        <p id="trackingOff">0</p>
+      </div>
+      <div class="stat-box">
+        <h3>Last Refresh</h3>
+        <p id="lastRefresh" style="font-size:16px;">--</p>
+      </div>
     </div>
 
-    <div class="card">
-      <h2>Live Driver Map</h2>
-      <p class="small">Refresh this page after turning on driver tracking.</p>
-      <iframe
-        id="brokerMap"
-        class="map-box"
-        src="https://www.google.com/maps?q=Atlanta,GA&output=embed">
-      </iframe>
+    <div class="grid">
+      <div class="card">
+        <h2>Live Driver Map</h2>
+        <p class="small">This map refreshes automatically and shows all drivers with saved coordinates.</p>
+        <div id="map"></div>
+      </div>
+
+      <div class="card">
+        <h2>Tracked Driver List</h2>
+        <div id="driverList" class="driver-list">
+          Loading drivers...
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
-    function loadDriverData() {
-      const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
-      const driverInfo = document.getElementById("driverInfo");
-      const trackingStatus = document.getElementById("trackingStatus");
-      const brokerMap = document.getElementById("brokerMap");
+    const supabaseClient = supabase.createClient(
+      "https://mubhwsjppmebuwpmsuwg.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
+    );
 
-      driverInfo.innerHTML =
-        "Driver Name: " + (data.driverName || "Not set") + "<br>" +
-        "Truck Number: " + (data.truckNumber || "Not set") + "<br>" +
-        "Load Number: " + (data.loadNumber || "Not set") + "<br>" +
-        "Driver Status: " + (data.driverStatus || "Not set") + "<br>" +
-        "Latitude: " + (data.lat || "Not available") + "<br>" +
-        "Longitude: " + (data.lng || "Not available") + "<br>" +
-        "Accuracy: " + (data.accuracy || "Not available") + "<br>" +
-        "Last Update: " + (data.updatedAt || "Not available");
+    const map = L.map("map").setView([33.749, -84.388], 6);
 
-      if (data.lat && data.lng) {
-        brokerMap.src = "https://www.google.com/maps?q=" + data.lat + "," + data.lng + "&output=embed";
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+
+    let markersLayer = L.layerGroup().addTo(map);
+
+    async function loadDrivers() {
+      const systemStatus = document.getElementById("systemStatus");
+      const driverList = document.getElementById("driverList");
+      const totalDrivers = document.getElementById("totalDrivers");
+      const trackingActive = document.getElementById("trackingActive");
+      const trackingOff = document.getElementById("trackingOff");
+      const lastRefresh = document.getElementById("lastRefresh");
+
+      const { data, error } = await supabaseClient
+        .from("driver_locations")
+        .select("*")
+        .order("updated_at", { ascending: false });
+
+      if (error) {
+        systemStatus.textContent = "DATABASE ERROR";
+        driverList.innerHTML = "Could not load drivers.";
+        return;
       }
 
-      trackingStatus.textContent = data.isTracking ? "TRACKING ACTIVE" : "TRACKING OFF";
+      systemStatus.textContent = "LIVE MAP ACTIVE";
+      lastRefresh.textContent = new Date().toLocaleTimeString();
+
+      totalDrivers.textContent = data.length;
+      trackingActive.textContent = data.filter(d => d.is_tracking).length;
+      trackingOff.textContent = data.filter(d => !d.is_tracking).length;
+
+      markersLayer.clearLayers();
+
+      let driverHtml = "";
+      const bounds = [];
+
+      data.forEach(driver => {
+        const isLive = !!driver.is_tracking;
+        const lat = driver.lat;
+        const lng = driver.lng;
+
+        driverHtml += `
+          <div class="driver-item">
+            <strong>${driver.driver_name || "Unknown Driver"}</strong><br>
+            Truck: ${driver.truck_number || "N/A"}<br>
+            Load: ${driver.load_number || "N/A"}<br>
+            Status: ${driver.driver_status || "N/A"}<br>
+            Last Update: ${driver.updated_at ? new Date(driver.updated_at).toLocaleString() : "N/A"}<br>
+            <span class="driver-badge">${isLive ? "TRACKING ACTIVE" : "TRACKING OFF"}</span>
+          </div>
+        `;
+
+        if (lat && lng) {
+          const marker = L.marker([lat, lng]).bindPopup(`
+            <strong>${driver.driver_name || "Unknown Driver"}</strong><br>
+            Truck: ${driver.truck_number || "N/A"}<br>
+            Load: ${driver.load_number || "N/A"}<br>
+            Status: ${driver.driver_status || "N/A"}<br>
+            Tracking: ${isLive ? "Active" : "Off"}<br>
+            Updated: ${driver.updated_at ? new Date(driver.updated_at).toLocaleString() : "N/A"}
+          `);
+
+          marker.addTo(markersLayer);
+          bounds.push([lat, lng]);
+        }
+      });
+
+      driverList.innerHTML = driverHtml || "No drivers found.";
+
+      if (bounds.length === 1) {
+        map.setView(bounds[0], 10);
+      } else if (bounds.length > 1) {
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
     }
 
-    loadDriverData();
-    setInterval(loadDriverData, 5000);
+    loadDrivers();
+    setInterval(loadDrivers, 5000);
   </script>
+
 </body>
 </html>
