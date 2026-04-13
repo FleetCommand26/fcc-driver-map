@@ -3,6 +3,8 @@
 <head>
   <title>Driver Tracking - FCC Driver Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
     body {
       margin: 0;
@@ -35,7 +37,6 @@
       padding: 12px 18px;
       background: #2563eb;
       color: white;
-      text-decoration: none;
       border-radius: 10px;
       font-weight: bold;
       margin-right: 10px;
@@ -63,9 +64,6 @@
       padding: 8px 12px;
       border-radius: 999px;
       background: #334155;
-      color: #e2e8f0;
-      font-size: 13px;
-      font-weight: bold;
       margin-top: 8px;
     }
 
@@ -75,7 +73,6 @@
       border-radius: 10px;
       margin-top: 12px;
       line-height: 1.8;
-      word-break: break-word;
     }
 
     .map-box {
@@ -91,158 +88,129 @@
       text-decoration: none;
       font-weight: bold;
     }
-
-    .small {
-      color: #cbd5e1;
-      font-size: 14px;
-    }
   </style>
 </head>
+
 <body>
-  <div class="header">
-    <h1>Driver Tracking Page</h1>
-    <p>Enable location sharing so FCC dashboards can view active movement</p>
+
+<div class="header">
+  <h1>Driver Tracking</h1>
+</div>
+
+<div class="section">
+
+  <div class="card">
+    <a class="back-link" href="/index.html">← Back</a>
   </div>
 
-  <div class="section">
-    <div class="card">
-      <a class="back-link" href="/index.html">← Back to Home</a>
-    </div>
+  <div class="card">
+    <h2>Driver Info</h2>
 
-    <div class="card">
-      <h2>Driver Information</h2>
+    <input class="input" id="driverName" placeholder="Driver Name" />
+    <input class="input" id="truckNumber" placeholder="Truck Number" />
+    <input class="input" id="loadNumber" placeholder="Load Number" />
+    <input class="input" id="driverStatus" placeholder="Status (In Transit)" />
 
-      <label>Driver Name</label>
-      <input class="input" id="driverName" placeholder="Enter driver name" />
-
-      <label>Truck Number</label>
-      <input class="input" id="truckNumber" placeholder="Enter truck number" />
-
-      <label>Load Number</label>
-      <input class="input" id="loadNumber" placeholder="Enter load number" />
-
-      <label>Status</label>
-      <input class="input" id="driverStatus" placeholder="Example: In Transit" />
-
-      <button class="button" onclick="saveDriverInfo()">Save Driver Info</button>
-    </div>
-
-    <div class="card">
-      <h2>Tracking Controls</h2>
-      <p class="small">This saves driver location for the demo dashboards.</p>
-
-      <button class="button" onclick="startTracking()">Enable Tracking</button>
-      <button class="button red" onclick="stopTracking()">Stop Tracking</button>
-
-      <div id="status" class="status">Tracking not started</div>
-
-      <div class="coords" id="coords">
-        Latitude: Not available<br>
-        Longitude: Not available<br>
-        Accuracy: Not available<br>
-        Last Update: Not available
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Driver Map Preview</h2>
-      <iframe
-        id="driverMap"
-        class="map-box"
-        src="https://www.google.com/maps?q=Atlanta,GA&output=embed">
-      </iframe>
-    </div>
+    <button class="button" onclick="saveDriver()">Save Driver</button>
   </div>
 
-  <script>
-    let watchId = null;
+  <div class="card">
+    <h2>Tracking</h2>
 
-    function saveDriverInfo() {
-      const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
+    <button class="button" onclick="startTracking()">Start</button>
+    <button class="button red" onclick="stopTracking()">Stop</button>
 
-      data.driverName = document.getElementById("driverName").value || "Unknown Driver";
-      data.truckNumber = document.getElementById("truckNumber").value || "Unknown Truck";
-      data.loadNumber = document.getElementById("loadNumber").value || "Unknown Load";
-      data.driverStatus = document.getElementById("driverStatus").value || "Waiting";
+    <div id="status" class="status">OFF</div>
 
-      localStorage.setItem("fccDriverData", JSON.stringify(data));
-      alert("Driver info saved");
-    }
+    <div id="coords" class="coords"></div>
+  </div>
 
-    function loadSavedDriverInfo() {
-      const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
+  <div class="card">
+    <iframe id="map" class="map-box"
+      src="https://www.google.com/maps?q=Atlanta&output=embed">
+    </iframe>
+  </div>
 
-      document.getElementById("driverName").value = data.driverName || "";
-      document.getElementById("truckNumber").value = data.truckNumber || "";
-      document.getElementById("loadNumber").value = data.loadNumber || "";
-      document.getElementById("driverStatus").value = data.driverStatus || "";
-    }
+</div>
 
-    function startTracking() {
-      const status = document.getElementById("status");
-      const coords = document.getElementById("coords");
-      const driverMap = document.getElementById("driverMap");
+<script>
 
-      if (!navigator.geolocation) {
-        status.textContent = "Geolocation is not supported on this device";
-        return;
-      }
+const supabaseClient = supabase.createClient(
+  "https://mubhwsjppmebuwpmsuwg.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
+);
 
-      status.textContent = "Requesting location permission...";
+let watchId = null;
+let driverId = null;
 
-      watchId = navigator.geolocation.watchPosition(
-        function(position) {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          const accuracy = position.coords.accuracy;
-          const updatedAt = new Date().toLocaleString();
+async function saveDriver() {
 
-          const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
+  const { data, error } = await supabaseClient
+    .from("driver_locations")
+    .insert([{
+      driver_name: document.getElementById("driverName").value,
+      truck_number: document.getElementById("truckNumber").value,
+      load_number: document.getElementById("loadNumber").value,
+      driver_status: document.getElementById("driverStatus").value,
+      is_tracking: false
+    }])
+    .select()
+    .single();
 
-          data.lat = lat;
-          data.lng = lng;
-          data.accuracy = accuracy;
-          data.updatedAt = updatedAt;
-          data.isTracking = true;
+  if (error) {
+    alert(error.message);
+    return;
+  }
 
-          localStorage.setItem("fccDriverData", JSON.stringify(data));
+  driverId = data.id;
+  alert("Saved");
+}
 
-          status.textContent = "Tracking enabled";
-          coords.innerHTML =
-            "Latitude: " + lat + "<br>" +
-            "Longitude: " + lng + "<br>" +
-            "Accuracy: " + accuracy + " meters<br>" +
-            "Last Update: " + updatedAt;
+function startTracking() {
 
-          driverMap.src = "https://www.google.com/maps?q=" + lat + "," + lng + "&output=embed";
-        },
-        function(error) {
-          status.textContent = "Tracking error: " + error.message;
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 10000,
-          timeout: 15000
-        }
-      );
-    }
+  if (!driverId) {
+    alert("Save driver first");
+    return;
+  }
 
-    function stopTracking() {
-      const status = document.getElementById("status");
-      const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
+  watchId = navigator.geolocation.watchPosition(async pos => {
 
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
 
-      data.isTracking = false;
-      localStorage.setItem("fccDriverData", JSON.stringify(data));
+    document.getElementById("coords").innerHTML =
+      "Lat: " + lat + "<br>Lng: " + lng;
 
-      status.textContent = "Tracking stopped";
-    }
+    document.getElementById("map").src =
+      "https://www.google.com/maps?q=" + lat + "," + lng + "&output=embed";
 
-    loadSavedDriverInfo();
-  </script>
+    await supabaseClient
+      .from("driver_locations")
+      .update({
+        lat: lat,
+        lng: lng,
+        is_tracking: true,
+        updated_at: new Date()
+      })
+      .eq("id", driverId);
+
+    document.getElementById("status").innerText = "LIVE";
+
+  });
+
+}
+
+function stopTracking() {
+
+  if (watchId) {
+    navigator.geolocation.clearWatch(watchId);
+  }
+
+  document.getElementById("status").innerText = "STOPPED";
+
+}
+
+</script>
+
 </body>
 </html>
