@@ -17,19 +17,9 @@
       text-align: center;
     }
 
-    .header h1 {
-      margin: 0;
-      font-size: 28px;
-    }
-
-    .header p {
-      margin-top: 8px;
-      color: #cbd5e1;
-    }
-
     .section {
       padding: 20px;
-      max-width: 800px;
+      max-width: 900px;
       margin: 0 auto;
     }
 
@@ -58,9 +48,14 @@
       background: #dc2626;
     }
 
-    .small {
-      color: #cbd5e1;
-      font-size: 14px;
+    .input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      margin-top: 8px;
+      margin-bottom: 12px;
+      font-size: 16px;
     }
 
     .status {
@@ -74,10 +69,13 @@
       margin-top: 8px;
     }
 
-    .back-link {
-      color: #93c5fd;
-      text-decoration: none;
-      font-weight: bold;
+    .coords {
+      background: #0f172a;
+      padding: 12px;
+      border-radius: 10px;
+      margin-top: 12px;
+      line-height: 1.8;
+      word-break: break-word;
     }
 
     .map-box {
@@ -88,20 +86,22 @@
       margin-top: 12px;
     }
 
-    .coords {
-      background: #0f172a;
-      padding: 12px;
-      border-radius: 10px;
-      margin-top: 12px;
-      line-height: 1.7;
-      word-break: break-word;
+    .back-link {
+      color: #93c5fd;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .small {
+      color: #cbd5e1;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>Driver Tracking Page</h1>
-    <p>Enable location sharing so dispatcher, broker, shipper, and owner operator can view active movement</p>
+    <p>Enable location sharing so FCC dashboards can view active movement</p>
   </div>
 
   <div class="section">
@@ -110,10 +110,26 @@
     </div>
 
     <div class="card">
+      <h2>Driver Information</h2>
+
+      <label>Driver Name</label>
+      <input class="input" id="driverName" placeholder="Enter driver name" />
+
+      <label>Truck Number</label>
+      <input class="input" id="truckNumber" placeholder="Enter truck number" />
+
+      <label>Load Number</label>
+      <input class="input" id="loadNumber" placeholder="Enter load number" />
+
+      <label>Status</label>
+      <input class="input" id="driverStatus" placeholder="Example: In Transit" />
+
+      <button class="button" onclick="saveDriverInfo()">Save Driver Info</button>
+    </div>
+
+    <div class="card">
       <h2>Tracking Controls</h2>
-      <p class="small">
-        This demo page shows how the driver will allow tracking from their phone.
-      </p>
+      <p class="small">This saves driver location for the demo dashboards.</p>
 
       <button class="button" onclick="startTracking()">Enable Tracking</button>
       <button class="button red" onclick="stopTracking()">Stop Tracking</button>
@@ -123,35 +139,44 @@
       <div class="coords" id="coords">
         Latitude: Not available<br>
         Longitude: Not available<br>
-        Accuracy: Not available
+        Accuracy: Not available<br>
+        Last Update: Not available
       </div>
     </div>
 
     <div class="card">
       <h2>Driver Map Preview</h2>
-      <p class="small">This map will update to the driver’s current location in the full system later.</p>
-
       <iframe
         id="driverMap"
         class="map-box"
         src="https://www.google.com/maps?q=Atlanta,GA&output=embed">
       </iframe>
     </div>
-
-    <div class="card">
-      <h2>What this page will eventually do</h2>
-      <ul>
-        <li>Driver receives secure tracking link by text</li>
-        <li>Driver taps enable tracking</li>
-        <li>Phone shares current location</li>
-        <li>Location updates show on broker, shipper, and owner dashboards</li>
-        <li>Tracking stops when load completes or driver turns it off</li>
-      </ul>
-    </div>
   </div>
 
   <script>
     let watchId = null;
+
+    function saveDriverInfo() {
+      const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
+
+      data.driverName = document.getElementById("driverName").value || "Unknown Driver";
+      data.truckNumber = document.getElementById("truckNumber").value || "Unknown Truck";
+      data.loadNumber = document.getElementById("loadNumber").value || "Unknown Load";
+      data.driverStatus = document.getElementById("driverStatus").value || "Waiting";
+
+      localStorage.setItem("fccDriverData", JSON.stringify(data));
+      alert("Driver info saved");
+    }
+
+    function loadSavedDriverInfo() {
+      const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
+
+      document.getElementById("driverName").value = data.driverName || "";
+      document.getElementById("truckNumber").value = data.truckNumber || "";
+      document.getElementById("loadNumber").value = data.loadNumber || "";
+      document.getElementById("driverStatus").value = data.driverStatus || "";
+    }
 
     function startTracking() {
       const status = document.getElementById("status");
@@ -170,12 +195,24 @@
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
           const accuracy = position.coords.accuracy;
+          const updatedAt = new Date().toLocaleString();
+
+          const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
+
+          data.lat = lat;
+          data.lng = lng;
+          data.accuracy = accuracy;
+          data.updatedAt = updatedAt;
+          data.isTracking = true;
+
+          localStorage.setItem("fccDriverData", JSON.stringify(data));
 
           status.textContent = "Tracking enabled";
           coords.innerHTML =
             "Latitude: " + lat + "<br>" +
             "Longitude: " + lng + "<br>" +
-            "Accuracy: " + accuracy + " meters";
+            "Accuracy: " + accuracy + " meters<br>" +
+            "Last Update: " + updatedAt;
 
           driverMap.src = "https://www.google.com/maps?q=" + lat + "," + lng + "&output=embed";
         },
@@ -192,14 +229,20 @@
 
     function stopTracking() {
       const status = document.getElementById("status");
+      const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
 
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
       }
 
+      data.isTracking = false;
+      localStorage.setItem("fccDriverData", JSON.stringify(data));
+
       status.textContent = "Tracking stopped";
     }
+
+    loadSavedDriverInfo();
   </script>
 </body>
 </html>
