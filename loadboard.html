@@ -9,7 +9,7 @@
     .wrap { max-width:1300px; margin:20px auto; padding:20px; }
     .card { background:#1e293b; border-radius:14px; padding:16px; margin-bottom:16px; }
     .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    input, select, textarea { width:100%; padding:12px; border:none; border-radius:10px; box-sizing:border-box; margin:8px 0 12px; }
+    input, select { width:100%; padding:12px; border:none; border-radius:10px; box-sizing:border-box; margin:8px 0 12px; }
     button { padding:12px 18px; border:none; border-radius:10px; background:#2563eb; color:white; font-weight:bold; cursor:pointer; margin-right:10px; margin-top:8px; }
     .secondary { background:#334155; }
     .red { background:#dc2626; }
@@ -18,9 +18,17 @@
     .status { padding:10px 12px; background:#0f172a; border-radius:10px; line-height:1.6; }
     .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:bold; }
     .open { background:#1d4ed8; color:white; }
+    .matched { background:#7c3aed; color:white; }
     .assigned { background:#c2410c; color:white; }
     .accepted { background:#166534; color:white; }
     .declined { background:#991b1b; color:white; }
+    .in_transit { background:#0f766e; color:white; }
+    .delivered { background:#14532d; color:white; }
+    .cancelled { background:#6b7280; color:white; }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns:1fr; }
+    }
   </style>
 </head>
 <body>
@@ -28,7 +36,9 @@
     <div class="card">
       <h1>FCC Load Board</h1>
       <button onclick="location.href='/auth.html'">Login</button>
-      <button class="secondary" onclick="signOut()">Sign Out</button>
+      <button class="secondary" onclick="location.href='/admin.html'">Admin</button>
+      <button class="secondary" onclick="location.href='/broker.html'">Broker Map</button>
+      <button class="red" onclick="signOut()">Sign Out</button>
       <div id="authBox" class="status">Checking session...</div>
     </div>
 
@@ -41,8 +51,12 @@
         <input id="ownerCompany" placeholder="Owner Company" />
         <input id="pickupName" placeholder="Pickup Name" />
         <input id="pickupAddress" placeholder="Pickup Address" />
+        <input id="pickupLat" placeholder="Pickup Latitude (optional)" />
+        <input id="pickupLng" placeholder="Pickup Longitude (optional)" />
         <input id="deliveryName" placeholder="Delivery Name" />
         <input id="deliveryAddress" placeholder="Delivery Address" />
+        <input id="deliveryLat" placeholder="Delivery Latitude (optional)" />
+        <input id="deliveryLng" placeholder="Delivery Longitude (optional)" />
         <input id="equipmentType" placeholder="Equipment Type" />
         <input id="weightLbs" placeholder="Weight Lbs" />
         <input id="rate" placeholder="Rate" />
@@ -108,13 +122,14 @@
 
       currentProfile = profile;
 
-      if (!profile || !["admin","broker"].includes(profile.role)) {
+      if (!profile || !["admin", "broker"].includes(profile.role)) {
         document.getElementById("authBox").innerHTML = "Access denied. Broker or admin required.";
         return false;
       }
 
       document.getElementById("authBox").innerHTML =
         `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
+
       return true;
     }
 
@@ -128,14 +143,23 @@
         owner_company: document.getElementById("ownerCompany").value.trim(),
         pickup_name: document.getElementById("pickupName").value.trim(),
         pickup_address: document.getElementById("pickupAddress").value.trim(),
+        pickup_lat: document.getElementById("pickupLat").value ? Number(document.getElementById("pickupLat").value) : null,
+        pickup_lng: document.getElementById("pickupLng").value ? Number(document.getElementById("pickupLng").value) : null,
         delivery_name: document.getElementById("deliveryName").value.trim(),
         delivery_address: document.getElementById("deliveryAddress").value.trim(),
+        delivery_lat: document.getElementById("deliveryLat").value ? Number(document.getElementById("deliveryLat").value) : null,
+        delivery_lng: document.getElementById("deliveryLng").value ? Number(document.getElementById("deliveryLng").value) : null,
         equipment_type: document.getElementById("equipmentType").value.trim(),
-        weight_lbs: Number(document.getElementById("weightLbs").value || 0),
-        rate: Number(document.getElementById("rate").value || 0),
+        weight_lbs: document.getElementById("weightLbs").value ? Number(document.getElementById("weightLbs").value) : null,
+        rate: document.getElementById("rate").value ? Number(document.getElementById("rate").value) : null,
         status: "open",
         created_by: currentUser.id
       };
+
+      if (!payload.load_number) {
+        document.getElementById("createStatus").innerHTML = "Load number is required.";
+        return;
+      }
 
       const { error } = await supabaseClient.from("loads").insert([payload]);
 
@@ -145,6 +169,12 @@
       if (!error) {
         loadLoads();
       }
+    }
+
+    function statusClass(status) {
+      return ["open","matched","assigned","accepted","declined","in_transit","delivered","cancelled"].includes(status)
+        ? status
+        : "open";
     }
 
     async function loadLoads() {
@@ -171,7 +201,9 @@
             Owner: ${load.owner_company || "N/A"}<br>
             Pickup: ${load.pickup_name || "N/A"}<br>
             Delivery: ${load.delivery_name || "N/A"}<br>
-            <span class="badge ${load.status}">${load.status.toUpperCase()}</span>
+            Equipment: ${load.equipment_type || "N/A"}<br>
+            Rate: ${load.rate || "N/A"}<br>
+            <span class="badge ${statusClass(load.status)}">${(load.status || "open").toUpperCase()}</span>
           </div>
         `;
       });
@@ -302,7 +334,7 @@
             <strong>${row.loads?.load_number || "Load"}</strong><br>
             Driver: ${row.driver_locations?.driver_name || "N/A"}<br>
             Truck: ${row.driver_locations?.truck_number || "N/A"}<br>
-            Status: <span class="badge ${row.status}">${row.status.toUpperCase()}</span>
+            Status: <span class="badge ${statusClass(row.status)}">${row.status.toUpperCase()}</span>
           </div>
         `;
       });
