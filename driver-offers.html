@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Driver Offers</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:white; }
+    .wrap { max-width:1000px; margin:20px auto; padding:20px; }
+    .card { background:#1e293b; border-radius:14px; padding:16px; margin-bottom:16px; }
+    .row { background:#0f172a; border-radius:10px; padding:12px; margin-bottom:10px; line-height:1.7; }
+    .status { padding:10px 12px; background:#0f172a; border-radius:10px; line-height:1.6; }
+    button { padding:12px 18px; border:none; border-radius:10px; background:#2563eb; color:white; font-weight:bold; cursor:pointer; margin-right:10px; margin-top:8px; }
+    .green { background:#166534; }
+    .red { background:#dc2626; }
+    .teal { background:#0f766e; }
+    .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:bold; }
+    .assigned { background:#c2410c; color:white; }
+    .accepted { background:#166534; color:white; }
+    .declined { background:#991b1b; color:white; }
+    .in_transit { background:#0f766e; color:white; }
+    .delivered { background:#14532d; color:white; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Driver Offers</h1>
+      <button onclick="location.href='/auth.html'">Login</button>
+      <button onclick="location.href='/driver.html'">Driver Map</button>
+      <button onclick="signOut()">Sign Out</button>
+      <div id="authBox" class="status">Checking session...</div>
+    </div>
+
+    <div class="card">
+      <h2>My Assigned Loads</h2>
+      <div id="offersList">Loading offers...</div>
+    </div>
+  </div>
+
+  <script>
+    const supabaseClient = supabase.createClient(
+      "https://mubhwsjppmebuwpmsuwg.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
+    );
+
+    let currentUser = null;
+    let currentProfile = null;
+    let myDriverRow = null;
+
+    function statusClass(status) {
+      return ["assigned","accepted","declined","in_transit","delivered"].includes(status)
+        ? status
+        : "assigned";
+    }
+
+    async function signOut() {
+      await supabaseClient.auth.signOut();
+      location.href = "/auth.html";
+    }
+
+    async function checkAccess() {
+      const { data: userData } = await supabaseClient.auth.getUser();
+      currentUser = userData.user;
+
+      if (!currentUser) {
+        document.getElementById("authBox").innerHTML = "Not signed in.";
+        return false;
+      }
+
+      const { data: profile } = await supabaseClient
+        .from("profiles")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .maybeSingle();
+
+      currentProfile = profile;
+
+      if (!profile || profile.role !== "driver") {
+        document.getElementById("authBox").innerHTML = "Access denied. Driver role required.";
+        return false;
+      }
+
+      document.getElementById("authBox").innerHTML =
+        `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
+
+      const { data: driverRows } = await supabaseClient
+        .from("driver_locations")
+        .select("*")
+        .eq("created_by", currentUser.id)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+
+      myDriverRow = driverRows && driverRows.length ? driverRows[0] : null;
+      return true;
+    }
+
+    async function acceptOffer(dispatchId, loadId) {
+      const { error: dErr } = await supabaseClient
+        .from("dispatch_assignments")
+        .update({
+          status: "accepted",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", dispatchId);
+
+      const { error: lErr } = await supabaseClient
+        .from("loads")
+        .update({
+          status: "accepted",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", loadId);
+
+      if (dErr || lErr) {
+        alert((dErr && dErr.message) || (lErr && lErr.message));
+        return;
+      }
+
+      loadOffers();
+    }
+
+    async function declineOffer(dispatchId, loadId) {
+      const { error: dErr } = await supabaseClient
+        .from("dispatch_assignments")
+        .update({
+          status: "declined",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", dispatchId);
+
+      const { error: lErr } = await supabaseClient
+        .from("loads")
+        .update({
+          status: "declined",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", loadId);
+
+      if (dErr || lErr) {
+        alert((dErr && dErr.message) || (lErr && lErr.message));
+        return;
+      }
+
+      loadOffers();
+    }
+
+    async function startTrip(loadId) {
+      const { error } = await supabaseClient
+        .from("loads")
+        .update({
+          status: "in_transit",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", loadId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      loadOffers();
+    }
+
+    async function markDelivered(loadId) {
+      const { error } = await supabaseClient
+        .from("loads")
+        .update({
+          status: "delivered",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", loadId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      loadOffers();
+    }
+
+    async function loadOffers() {
+      if (!myDriverRow) {
+        document.getElementById("offersList").innerHTML = "No driver profile row found for this account.";
+        return;
+      }
+
+      const { data, error } = await supabaseClient
+        .from("dispatch_assignments")
+        .select(`
+          *,
+          loads:load_id(*)
+        `)
+        .eq("driver_location_id", myDriverRow.id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        document.getElementById("offersList").innerHTML = "Error loading offers.";
+        return;
+      }
+
+      let html = "";
+      data.forEach(row => {
+        const loadStatus = row.loads?.status || "assigned";
+        html += `
+          <div class="row">
+            <strong>Load ${row.loads?.load_number || "N/A"}</strong><br>
+            Pickup: ${row.loads?.pickup_name || "N/A"}<br>
+            Pickup Address: ${row.loads?.pickup_address || "N/A"}<br>
+            Delivery: ${row.loads?.delivery_name || "N/A"}<br>
+            Delivery Address: ${row.loads?.delivery_address || "N/A"}<br>
+            Equipment: ${row.loads?.equipment_type || "N/A"}<br>
+            Weight: ${row.loads?.weight_lbs || "N/A"}<br>
+            Rate: ${row.loads?.rate || "N/A"}<br>
+            Dispatch Status: <span class="badge ${statusClass(row.status)}">${row.status.toUpperCase()}</span><br>
+            Load Status: <span class="badge ${statusClass(loadStatus)}">${loadStatus.toUpperCase()}</span><br>
+            <button class="green" onclick="acceptOffer(${row.id}, ${row.load_id})">Accept</button>
+            <button class="red" onclick="declineOffer(${row.id}, ${row.load_id})">Decline</button>
+            <button class="teal" onclick="startTrip(${row.load_id})">Start Trip</button>
+            <button class="green" onclick="markDelivered(${row.load_id})">Delivered</button>
+          </div>
+        `;
+      });
+
+      document.getElementById("offersList").innerHTML = html || "No offers found.";
+    }
+
+    function subscribeRealtime() {
+      supabaseClient
+        .channel("driver-offers")
+        .on("postgres_changes", { event: "*", schema: "public", table: "dispatch_assignments" }, () => {
+          loadOffers();
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "loads" }, () => {
+          loadOffers();
+        })
+        .subscribe();
+    }
+
+    (async () => {
+      const ok = await checkAccess();
+      if (ok) {
+        await loadOffers();
+        subscribeRealtime();
+      }
+    })();
+  </script>
+</body>
+</html>
