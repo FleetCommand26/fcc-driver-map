@@ -17,16 +17,6 @@
       text-align: center;
     }
 
-    .header h1 {
-      margin: 0;
-      font-size: 28px;
-    }
-
-    .header p {
-      margin-top: 8px;
-      color: #cbd5e1;
-    }
-
     .section {
       padding: 20px;
     }
@@ -45,26 +35,19 @@
       border-radius: 12px;
     }
 
-    .button {
-      display: inline-block;
-      padding: 12px 18px;
-      background: #2563eb;
-      color: white;
+    .back-link {
+      color: #93c5fd;
       text-decoration: none;
-      border-radius: 10px;
       font-weight: bold;
-      margin-right: 10px;
-      margin-top: 10px;
     }
 
-    .small {
-      color: #cbd5e1;
-      font-size: 14px;
+    .info {
+      line-height: 1.8;
     }
 
     .status {
       display: inline-block;
-      padding: 6px 10px;
+      padding: 8px 12px;
       border-radius: 999px;
       background: #3f6212;
       color: #d9f99d;
@@ -72,28 +55,12 @@
       font-weight: bold;
       margin-top: 8px;
     }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-    }
-
-    ul {
-      padding-left: 18px;
-    }
-
-    .back-link {
-      color: #93c5fd;
-      text-decoration: none;
-      font-weight: bold;
-    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>Owner Operator Dashboard</h1>
-    <p>View your trucks, drivers, and active fleet movement</p>
+    <p>Fleet visibility and driver tracking status</p>
   </div>
 
   <div class="section">
@@ -101,71 +68,47 @@
       <a class="back-link" href="/index.html">← Back to Home</a>
     </div>
 
-    <div class="grid">
-      <div class="card">
-        <h2>Active Trucks</h2>
-        <p style="font-size: 28px; margin: 8px 0;">6</p>
-        <p class="small">Trucks currently running loads</p>
+    <div class="card">
+      <h2>Fleet Driver Details</h2>
+      <div class="info" id="ownerInfo">
+        No fleet data found yet.
       </div>
-
-      <div class="card">
-        <h2>Drivers Online</h2>
-        <p style="font-size: 28px; margin: 8px 0;">5</p>
-        <p class="small">Drivers actively sharing location</p>
-      </div>
-
-      <div class="card">
-        <h2>Loads Assigned</h2>
-        <p style="font-size: 28px; margin: 8px 0;">9</p>
-        <p class="small">Current loads assigned to your fleet</p>
-      </div>
-
-      <div class="card">
-        <h2>Subscription Status</h2>
-        <p style="font-size: 28px; margin: 8px 0;">Active</p>
-        <p class="small">Eligible for SmartMatch load offers</p>
-      </div>
+      <div id="ownerStatus" class="status">WAITING FOR DRIVER</div>
     </div>
 
     <div class="card">
       <h2>Fleet Map</h2>
-      <p class="small">This preview will later show only your trucks and drivers.</p>
-
       <iframe
+        id="ownerMap"
         class="map-box"
         src="https://www.google.com/maps?q=Atlanta,GA&output=embed">
       </iframe>
-
-      <div class="status">OWNER VIEW READY</div>
-    </div>
-
-    <div class="card">
-      <h2>Owner Operator Actions</h2>
-      <a class="button" href="#">View Fleet</a>
-      <a class="button" href="#">View Drivers</a>
-      <a class="button" href="#">Tracking Status</a>
-      <a class="button" href="#">SmartMatch Offers</a>
-    </div>
-
-    <div class="card">
-      <h2>Sample Fleet Status</h2>
-      <ul>
-        <li>Truck 101 — Atlanta, GA — Driver online and moving</li>
-        <li>Truck 202 — Macon, GA — Waiting on next dispatch</li>
-        <li>Truck 303 — Savannah, GA — SmartMatch offer received</li>
-      </ul>
-    </div>
-
-    <div class="card">
-      <h2>What this page will eventually do</h2>
-      <ul>
-        <li>Show only your fleet on the map</li>
-        <li>Show which drivers enabled tracking</li>
-        <li>Show active and inactive trucks</li>
-        <li>Show available trucks for new offers</li>
-        <li>Show SmartMatch offers for paid active subscribers</li>
-      </ul>
     </div>
   </div>
+
+  <script>
+    function loadDriverData() {
+      const data = JSON.parse(localStorage.getItem("fccDriverData")) || {};
+      const ownerInfo = document.getElementById("ownerInfo");
+      const ownerStatus = document.getElementById("ownerStatus");
+      const ownerMap = document.getElementById("ownerMap");
+
+      ownerInfo.innerHTML =
+        "Driver Name: " + (data.driverName || "Not set") + "<br>" +
+        "Truck Number: " + (data.truckNumber || "Not set") + "<br>" +
+        "Load Number: " + (data.loadNumber || "Not set") + "<br>" +
+        "Fleet Status: " + (data.driverStatus || "Not set") + "<br>" +
+        "Last Update: " + (data.updatedAt || "Not available");
+
+      if (data.lat && data.lng) {
+        ownerMap.src = "https://www.google.com/maps?q=" + data.lat + "," + data.lng + "&output=embed";
+      }
+
+      ownerStatus.textContent = data.isTracking ? "FLEET TRACKING ACTIVE" : "TRACKING OFF";
+    }
+
+    loadDriverData();
+    setInterval(loadDriverData, 5000);
+  </script>
 </body>
 </html>
