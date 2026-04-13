@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Broker Dashboard - FCC Route Intelligence</title>
+  <title>Broker Dashboard - FCC TomTom Follow Mode</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -34,7 +34,7 @@
 
     .section {
       padding: 20px;
-      max-width: 1350px;
+      max-width: 1400px;
       margin: 0 auto;
     }
 
@@ -107,7 +107,7 @@
 
     #map {
       width: 100%;
-      height: 640px;
+      height: 700px;
       border-radius: 14px;
       overflow: hidden;
     }
@@ -216,6 +216,10 @@
       background: #dc2626;
     }
 
+    .button.green {
+      background: #166534;
+    }
+
     .panel-row {
       margin-bottom: 10px;
       line-height: 1.7;
@@ -271,13 +275,13 @@
 
   <div class="header">
     <h1>Broker Dashboard</h1>
-    <p>Live multi-driver map with follow mode, route intelligence, and smart carrier matching</p>
+    <p>TomTom street + satellite follow mode with traffic overlays</p>
   </div>
 
   <div class="section">
     <div class="card">
       <a class="back-link" href="/index.html">← Back to Home</a>
-      <div id="systemStatus" class="status">LOADING LIVE INTELLIGENCE</div>
+      <div id="systemStatus" class="status">LOADING LIVE MAP</div>
     </div>
 
     <div class="top-stats">
@@ -307,9 +311,13 @@
       <div>
         <div class="card">
           <h2>Live Driver Map</h2>
-          <p class="small">Green = active, yellow = stale, red = off.</p>
+          <p class="small">Street, satellite, traffic flow, and incident overlays.</p>
 
-          <button class="button" onclick="zoomToAllDrivers()">Zoom To All Drivers</button>
+          <button class="button" onclick="setStreetView()">Street View</button>
+          <button class="button secondary" onclick="setSatelliteView()">Satellite View</button>
+          <button class="button green" onclick="toggleTrafficFlow()">Toggle Traffic Flow</button>
+          <button class="button red" onclick="toggleTrafficIncidents()">Toggle Incidents</button>
+          <button class="button secondary" onclick="zoomToAllDrivers()">Zoom To All Drivers</button>
           <button class="button red" onclick="stopFollowing()">Stop Following</button>
 
           <div class="follow-box" id="followStatus">
@@ -364,15 +372,6 @@
         </div>
 
         <div class="card">
-          <h2>AI Smart Carrier Match</h2>
-          <p class="small">Ranks nearest active trucks to the pickup and simulates auto-ping.</p>
-          <button class="button" onclick="runSmartMatch()">Run Smart Match</button>
-          <div id="matchPanel">
-            <div class="route-line">No smart match run yet.</div>
-          </div>
-        </div>
-
-        <div class="card">
           <h2>Tracked Driver List</h2>
           <div id="driverList" class="driver-list">
             Loading drivers...
@@ -397,18 +396,96 @@
 
     const TOMTOM_API_KEY = "Y18RLm8evGUvp0THSxz50lZJZMYNqH25";
 
-    const map = L.map("map").setView([33.749, -84.388], 6);
+    const tomtomStreet = L.tileLayer(
+      `https://{s}.api.tomtom.com/map/1/tile/basic/main/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`,
+      {
+        subdomains: ["a", "b", "c", "d"],
+        maxZoom: 22,
+        attribution: "&copy; TomTom"
+      }
+    );
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap"
-    }).addTo(map);
+    const tomtomSatellite = L.tileLayer(
+      `https://api.tomtom.com/map/1/tile/sat/main/{z}/{x}/{y}.jpg?key=${TOMTOM_API_KEY}`,
+      {
+        maxZoom: 19,
+        attribution: "&copy; TomTom"
+      }
+    );
+
+    const tomtomLabels = L.tileLayer(
+      `https://{s}.api.tomtom.com/map/1/tile/labels/main/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`,
+      {
+        subdomains: ["a", "b", "c", "d"],
+        maxZoom: 22,
+        opacity: 1,
+        attribution: "&copy; TomTom"
+      }
+    );
+
+    const trafficFlowLayer = L.tileLayer(
+      `https://api.tomtom.com/traffic/map/4/tile/flow/relative-delay/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`,
+      {
+        maxZoom: 22,
+        opacity: 0.8,
+        attribution: "&copy; TomTom Traffic"
+      }
+    );
+
+    const trafficIncidentsLayer = L.tileLayer(
+      `https://api.tomtom.com/traffic/map/4/tile/incidents/s3/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`,
+      {
+        maxZoom: 22,
+        opacity: 0.9,
+        attribution: "&copy; TomTom Traffic"
+      }
+    );
+
+    const map = L.map("map", {
+      zoomControl: true,
+      layers: [tomtomStreet, tomtomLabels]
+    }).setView([33.749, -84.388], 6);
 
     let markersLayer = L.layerGroup().addTo(map);
     let routeLayer = null;
     let latestDrivers = [];
     let followedDriverId = null;
     let markerMap = {};
+    let isTrafficFlowOn = false;
+    let isTrafficIncidentsOn = false;
+    let currentBase = "street";
+
+    function setStreetView() {
+      currentBase = "street";
+      if (map.hasLayer(tomtomSatellite)) map.removeLayer(tomtomSatellite);
+      if (!map.hasLayer(tomtomStreet)) map.addLayer(tomtomStreet);
+      if (!map.hasLayer(tomtomLabels)) map.addLayer(tomtomLabels);
+    }
+
+    function setSatelliteView() {
+      currentBase = "satellite";
+      if (map.hasLayer(tomtomStreet)) map.removeLayer(tomtomStreet);
+      if (!map.hasLayer(tomtomSatellite)) map.addLayer(tomtomSatellite);
+      if (!map.hasLayer(tomtomLabels)) map.addLayer(tomtomLabels);
+    }
+
+    function toggleTrafficFlow() {
+      isTrafficFlowOn = !isTrafficFlowOn;
+      if (isTrafficFlowOn) {
+        map.addLayer(trafficFlowLayer);
+      } else {
+        map.removeLayer(trafficFlowLayer);
+      }
+    }
+
+    function toggleTrafficIncidents() {
+      isTrafficIncidentsOn = !isTrafficIncidentsOn;
+      if (isTrafficIncidentsOn) {
+        map.addLayer(trafficIncidentsLayer);
+      } else {
+        map.removeLayer(trafficIncidentsLayer);
+      }
+    }
 
     function getDriverState(driver) {
       if (!driver.updated_at) return "off";
@@ -431,19 +508,6 @@
         iconAnchor: [13, 13],
         popupAnchor: [0, -12]
       });
-    }
-
-    function haversineMiles(lat1, lon1, lat2, lon2) {
-      const R = 3958.8;
-      const toRad = deg => deg * Math.PI / 180;
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
-      const a =
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
     }
 
     function formatMinutes(seconds) {
@@ -472,11 +536,7 @@
         box.innerHTML = "";
         return;
       }
-      box.innerHTML = `
-        <div class="error-box">
-          ${message}
-        </div>
-      `;
+      box.innerHTML = `<div class="error-box">${message}</div>`;
     }
 
     async function tomtomGeocode(query) {
@@ -513,6 +573,35 @@
       throw new Error("Destination not found. Try full city and state, like Jacksonville, Florida.");
     }
 
+    function decodePolyline(encoded, precision = 5) {
+      let index = 0, lat = 0, lng = 0, coordinates = [];
+      const factor = Math.pow(10, precision);
+
+      while (index < encoded.length) {
+        let b, shift = 0, result = 0;
+        do {
+          b = encoded.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        const deltaLat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        lat += deltaLat;
+
+        shift = 0;
+        result = 0;
+        do {
+          b = encoded.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        const deltaLng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        lng += deltaLng;
+
+        coordinates.push([lat / factor, lng / factor]);
+      }
+      return coordinates;
+    }
+
     async function loadDrivers() {
       const systemStatus = document.getElementById("systemStatus");
       const driverList = document.getElementById("driverList");
@@ -536,7 +625,7 @@
       latestDrivers = data;
       markerMap = {};
 
-      systemStatus.textContent = "LIVE INTELLIGENCE ACTIVE";
+      systemStatus.textContent = "LIVE MAP ACTIVE";
       lastRefresh.textContent = new Date().toLocaleTimeString();
 
       const activeCount = data.filter(d => getDriverState(d) === "active").length;
@@ -584,6 +673,10 @@
             Updated: ${driver.updated_at ? new Date(driver.updated_at).toLocaleString() : "N/A"}<br><br>
             <button onclick="followDriver(${driver.id})">Follow Driver</button>
           `);
+
+          marker.on("click", function() {
+            followDriver(driver.id);
+          });
 
           marker.addTo(markersLayer);
           markerMap[driver.id] = marker;
@@ -648,7 +741,12 @@
       const driver = latestDrivers.find(d => d.id === followedDriverId);
       if (!driver || !driver.lat || !driver.lng) return;
 
-      map.setView([driver.lat, driver.lng], 16);
+      const zoomLevel = currentBase === "satellite" ? 18 : 20;
+      map.flyTo([driver.lat, driver.lng], zoomLevel, {
+        animate: true,
+        duration: 1.1
+      });
+
       updateSelectedDriverPanel(driver);
 
       const marker = markerMap[driver.id];
@@ -675,7 +773,10 @@
       });
 
       if (bounds.length === 1) {
-        map.setView(bounds[0], 10);
+        map.flyTo(bounds[0], 14, {
+          animate: true,
+          duration: 1.2
+        });
       } else if (bounds.length > 1) {
         map.fitBounds(bounds, { padding: [40, 40] });
       }
@@ -767,35 +868,6 @@
       }
     }
 
-    function decodePolyline(encoded, precision = 5) {
-      let index = 0, lat = 0, lng = 0, coordinates = [];
-      const factor = Math.pow(10, precision);
-
-      while (index < encoded.length) {
-        let b, shift = 0, result = 0;
-        do {
-          b = encoded.charCodeAt(index++) - 63;
-          result |= (b & 0x1f) << shift;
-          shift += 5;
-        } while (b >= 0x20);
-        const deltaLat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        lat += deltaLat;
-
-        shift = 0;
-        result = 0;
-        do {
-          b = encoded.charCodeAt(index++) - 63;
-          result |= (b & 0x1f) << shift;
-          shift += 5;
-        } while (b >= 0x20);
-        const deltaLng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        lng += deltaLng;
-
-        coordinates.push([lat / factor, lng / factor]);
-      }
-      return coordinates;
-    }
-
     async function buildRoute() {
       setRouteError("");
       const routePanel = document.getElementById("routePanel");
@@ -834,17 +906,9 @@
 
         let queryParams = `key=${TOMTOM_API_KEY}&traffic=true&instructionsType=text&routeRepresentation=polyline`;
 
-        if (mode === "noTolls") {
-          queryParams += `&avoid=tollRoads`;
-        }
-
-        if (mode === "avoidHighways") {
-          queryParams += `&avoid=motorways`;
-        }
-
-        if (mode === "alternate") {
-          queryParams += `&maxAlternatives=2`;
-        }
+        if (mode === "noTolls") queryParams += `&avoid=tollRoads`;
+        if (mode === "avoidHighways") queryParams += `&avoid=motorways`;
+        if (mode === "alternate") queryParams += `&maxAlternatives=2`;
 
         const routeUrl = `https://api.tomtom.com/routing/1/calculateRoute/${startPoint.lat},${startPoint.lng}:${destination.lat},${destination.lng}/json?${queryParams}`;
         const routeRes = await fetch(routeUrl);
@@ -857,26 +921,21 @@
         const firstRoute = routeData.routes[0];
         const summary = firstRoute.summary;
 
-        if (routeLayer) {
-          map.removeLayer(routeLayer);
-        }
+        if (routeLayer) map.removeLayer(routeLayer);
 
         let points = [];
-
         if (firstRoute.legs && firstRoute.legs[0] && firstRoute.legs[0].points) {
           points = firstRoute.legs[0].points.map(p => [p.latitude, p.longitude]);
         } else if (firstRoute.encodedPolyline) {
           points = decodePolyline(firstRoute.encodedPolyline);
         }
 
-        if (!points.length) {
-          throw new Error("Route geometry missing.");
-        }
+        if (!points.length) throw new Error("Route geometry missing.");
 
         routeLayer = L.polyline(points, {
           color: "#3b82f6",
           weight: 5,
-          opacity: 0.9
+          opacity: 0.95
         }).addTo(map);
 
         map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
@@ -933,62 +992,8 @@
       document.getElementById("routePanel").innerHTML = `<div class="route-line">Route cleared.</div>`;
     }
 
-    async function runSmartMatch() {
-      const panel = document.getElementById("matchPanel");
-      panel.innerHTML = `<div class="route-line">Running smart match...</div>`;
-
-      try {
-        const pickupText = document.getElementById("pickupInput").value.trim();
-        const pickup = await tomtomGeocode(pickupText || "Atlanta, Georgia");
-
-        const eligible = latestDrivers
-          .filter(d => d.lat && d.lng)
-          .map(d => {
-            const miles = haversineMiles(d.lat, d.lng, pickup.lat, pickup.lng);
-            const state = getDriverState(d);
-            let score = 100 - miles;
-            if (state === "active") score += 25;
-            if (state === "stale") score -= 15;
-            if (state === "off") score -= 40;
-            return { ...d, miles, state, score };
-          })
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 3);
-
-        if (!eligible.length) {
-          panel.innerHTML = `<div class="route-line">No trucks with live coordinates found for matching.</div>`;
-          return;
-        }
-
-        let html = `<div class="route-line"><strong>Pickup:</strong> ${pickup.label}</div>`;
-
-        eligible.forEach((d, idx) => {
-          html += `
-            <div class="route-line">
-              <strong>Rank ${idx + 1}:</strong> ${d.driver_name || "Unknown Driver"}<br>
-              Truck: ${d.truck_number || "N/A"}<br>
-              Distance to Pickup: ${d.miles.toFixed(1)} miles<br>
-              Tracking State: ${d.state.toUpperCase()}<br>
-              Smart Score: ${d.score.toFixed(1)}<br>
-              Auto Ping: SENT
-            </div>
-          `;
-        });
-
-        html += `
-          <div class="route-line">
-            <strong>Auto Ping Result:</strong> Demo ping sent to top ranked nearest trucks.
-          </div>
-        `;
-
-        panel.innerHTML = html;
-      } catch (err) {
-        panel.innerHTML = `<div class="route-line">Smart match error: ${err.message}</div>`;
-      }
-    }
-
     loadDrivers();
-    setInterval(loadDrivers, 5000);
+    setInterval(loadDrivers, 2000);
   </script>
 </body>
 </html>
