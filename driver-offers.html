@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Driver Offers</title>
+  <title>Driver Offers + Trip Lifecycle</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:white; }
-    .wrap { max-width:1000px; margin:20px auto; padding:20px; }
+    .wrap { max-width:1100px; margin:20px auto; padding:20px; }
     .card { background:#1e293b; border-radius:14px; padding:16px; margin-bottom:16px; }
     .row { background:#0f172a; border-radius:10px; padding:12px; margin-bottom:10px; line-height:1.7; }
     .status { padding:10px 12px; background:#0f172a; border-radius:10px; line-height:1.6; }
@@ -14,18 +14,25 @@
     .green { background:#166534; }
     .red { background:#dc2626; }
     .teal { background:#0f766e; }
+    .orange { background:#c2410c; }
     .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:bold; }
     .assigned { background:#c2410c; color:white; }
     .accepted { background:#166534; color:white; }
     .declined { background:#991b1b; color:white; }
     .in_transit { background:#0f766e; color:white; }
     .delivered { background:#14532d; color:white; }
+    .loaded { background:#1d4ed8; color:white; }
+    .arrived_pickup { background:#7c3aed; color:white; }
+    .arrived_delivery { background:#9333ea; color:white; }
+    input, textarea { width:100%; padding:12px; border:none; border-radius:10px; box-sizing:border-box; margin:8px 0 12px; }
+    .timeline { margin-top:10px; padding-left:18px; }
+    .timeline-item { margin-bottom:8px; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
-      <h1>Driver Offers</h1>
+      <h1>Driver Offers + Trip Lifecycle</h1>
       <button onclick="location.href='/auth.html'">Login</button>
       <button onclick="location.href='/driver.html'">Driver Map</button>
       <button onclick="signOut()">Sign Out</button>
@@ -49,9 +56,11 @@
     let myDriverRow = null;
 
     function statusClass(status) {
-      return ["assigned","accepted","declined","in_transit","delivered"].includes(status)
-        ? status
-        : "assigned";
+      const allowed = [
+        "assigned", "accepted", "declined", "in_transit",
+        "delivered", "loaded", "arrived_pickup", "arrived_delivery"
+      ];
+      return allowed.includes(status) ? status : "assigned";
     }
 
     async function signOut() {
@@ -95,6 +104,17 @@
       return true;
     }
 
+    async function addTripEvent(loadId, eventType, note = "") {
+      return await supabaseClient
+        .from("trip_events")
+        .insert([{
+          load_id: loadId,
+          event_type: eventType,
+          note,
+          created_by: currentUser.id
+        }]);
+    }
+
     async function acceptOffer(dispatchId, loadId) {
       const { error: dErr } = await supabaseClient
         .from("dispatch_assignments")
@@ -111,6 +131,8 @@
           updated_at: new Date().toISOString()
         })
         .eq("id", loadId);
+
+      await addTripEvent(loadId, "accepted", "Driver accepted load");
 
       if (dErr || lErr) {
         alert((dErr && dErr.message) || (lErr && lErr.message));
@@ -137,6 +159,8 @@
         })
         .eq("id", loadId);
 
+      await addTripEvent(loadId, "declined", "Driver declined load");
+
       if (dErr || lErr) {
         alert((dErr && dErr.message) || (lErr && lErr.message));
         return;
@@ -145,14 +169,17 @@
       loadOffers();
     }
 
-    async function startTrip(loadId) {
+    async function setLoadStatus(loadId, newStatus, eventType, note) {
       const { error } = await supabaseClient
         .from("loads")
         .update({
-          status: "in_transit",
-          updated_at: new Date().toISOString()
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+          delivered_at: newStatus === "delivered" ? new Date().toISOString() : null
         })
         .eq("id", loadId);
+
+      await addTripEvent(loadId, eventType, note);
 
       if (error) {
         alert(error.message);
@@ -162,21 +189,59 @@
       loadOffers();
     }
 
-    async function markDelivered(loadId) {
-      const { error } = await supabaseClient
+    async function uploadPOD(loadId) {
+      const input = document.getElementById(`podFile-${loadId}`);
+      const noteInput = document.getElementById(`podNote-${loadId}`);
+      const file = input.files[0];
+
+      if (!file) {
+        alert("Choose a POD file first.");
+        return;
+      }
+
+      const filePath = `${currentUser.id}/${loadId}/${Date.now()}-${file.name}`;
+
+      const { error: uploadError } = await supabaseClient
+        .storage
+        .from("pod-files")
+        .upload(filePath, file, { upsert: false });
+
+      if (uploadError) {
+        alert(uploadError.message);
+        return;
+      }
+
+      const { error: updateError } = await supabaseClient
         .from("loads")
         .update({
+          pod_path: filePath,
+          pod_filename: file.name,
+          delivered_at: new Date().toISOString(),
           status: "delivered",
           updated_at: new Date().toISOString()
         })
         .eq("id", loadId);
 
-      if (error) {
-        alert(error.message);
+      await addTripEvent(loadId, "pod_uploaded", noteInput?.value || "POD uploaded");
+      await addTripEvent(loadId, "delivered", "Load marked delivered with POD");
+
+      if (updateError) {
+        alert(updateError.message);
         return;
       }
 
       loadOffers();
+    }
+
+    async function getSignedPodUrl(path) {
+      if (!path) return null;
+      const { data, error } = await supabaseClient
+        .storage
+        .from("pod-files")
+        .createSignedUrl(path, 3600);
+
+      if (error) return null;
+      return data.signedUrl;
     }
 
     async function loadOffers() {
@@ -200,8 +265,25 @@
       }
 
       let html = "";
-      data.forEach(row => {
+
+      for (const row of data) {
         const loadStatus = row.loads?.status || "assigned";
+
+        const { data: timeline } = await supabaseClient
+          .from("trip_events")
+          .select("*")
+          .eq("load_id", row.load_id)
+          .order("created_at", { ascending: true });
+
+        const podUrl = row.loads?.pod_path ? await getSignedPodUrl(row.loads.pod_path) : null;
+
+        const timelineHtml = (timeline || []).map(ev => `
+          <div class="timeline-item">
+            <strong>${ev.event_type}</strong> — ${new Date(ev.created_at).toLocaleString()}<br>
+            ${ev.note || ""}
+          </div>
+        `).join("");
+
         html += `
           <div class="row">
             <strong>Load ${row.loads?.load_number || "N/A"}</strong><br>
@@ -214,26 +296,37 @@
             Rate: ${row.loads?.rate || "N/A"}<br>
             Dispatch Status: <span class="badge ${statusClass(row.status)}">${row.status.toUpperCase()}</span><br>
             Load Status: <span class="badge ${statusClass(loadStatus)}">${loadStatus.toUpperCase()}</span><br>
+
             <button class="green" onclick="acceptOffer(${row.id}, ${row.load_id})">Accept</button>
             <button class="red" onclick="declineOffer(${row.id}, ${row.load_id})">Decline</button>
-            <button class="teal" onclick="startTrip(${row.load_id})">Start Trip</button>
-            <button class="green" onclick="markDelivered(${row.load_id})">Delivered</button>
+            <button class="teal" onclick="setLoadStatus(${row.load_id}, 'in_transit', 'in_transit', 'Trip started')">Start Trip</button>
+            <button class="orange" onclick="setLoadStatus(${row.load_id}, 'in_transit', 'arrived_pickup', 'Arrived at pickup')">Arrived Pickup</button>
+            <button class="orange" onclick="setLoadStatus(${row.load_id}, 'in_transit', 'loaded', 'Loaded and departed pickup')">Loaded</button>
+            <button class="orange" onclick="setLoadStatus(${row.load_id}, 'in_transit', 'arrived_delivery', 'Arrived at delivery')">Arrived Delivery</button>
+
+            <hr>
+            <strong>POD Upload</strong><br>
+            <input type="file" id="podFile-${row.load_id}" />
+            <textarea id="podNote-${row.load_id}" placeholder="POD note (optional)"></textarea>
+            <button class="green" onclick="uploadPOD(${row.load_id})">Upload POD + Mark Delivered</button>
+            ${podUrl ? `<div style="margin-top:10px;"><a href="${podUrl}" target="_blank" style="color:#93c5fd;">View Current POD</a></div>` : ""}
+
+            <hr>
+            <strong>Status Timeline</strong>
+            <div class="timeline">${timelineHtml || "No timeline events yet."}</div>
           </div>
         `;
-      });
+      }
 
       document.getElementById("offersList").innerHTML = html || "No offers found.";
     }
 
     function subscribeRealtime() {
       supabaseClient
-        .channel("driver-offers")
-        .on("postgres_changes", { event: "*", schema: "public", table: "dispatch_assignments" }, () => {
-          loadOffers();
-        })
-        .on("postgres_changes", { event: "*", schema: "public", table: "loads" }, () => {
-          loadOffers();
-        })
+        .channel("driver-trip-lifecycle")
+        .on("postgres_changes", { event: "*", schema: "public", table: "dispatch_assignments" }, () => loadOffers())
+        .on("postgres_changes", { event: "*", schema: "public", table: "loads" }, () => loadOffers())
+        .on("postgres_changes", { event: "*", schema: "public", table: "trip_events" }, () => loadOffers())
         .subscribe();
     }
 
