@@ -1,216 +1,225 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Driver Tracking - FCC Driver Map</title>
+  <title>Driver Tracking - FCC Live Driver View</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #0f172a;
-      color: white;
-    }
-
-    .header {
-      background: #111827;
-      padding: 20px;
-      text-align: center;
-    }
-
-    .section {
-      padding: 20px;
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    .card {
-      background: #1e293b;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-
-    .button {
-      display: inline-block;
-      padding: 12px 18px;
-      background: #2563eb;
-      color: white;
-      border-radius: 10px;
-      font-weight: bold;
-      margin-right: 10px;
-      margin-top: 10px;
-      border: none;
-      cursor: pointer;
-    }
-
-    .button.red {
-      background: #dc2626;
-    }
-
-    .input {
-      width: 100%;
-      padding: 12px;
-      border-radius: 10px;
-      border: none;
-      margin-top: 8px;
-      margin-bottom: 12px;
-      font-size: 16px;
-    }
-
-    .status {
-      display: inline-block;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: #334155;
-      margin-top: 8px;
-    }
-
-    .coords {
-      background: #0f172a;
-      padding: 12px;
-      border-radius: 10px;
-      margin-top: 12px;
-      line-height: 1.8;
-    }
-
-    .map-box {
-      width: 100%;
-      height: 350px;
-      border: 0;
-      border-radius: 12px;
-      margin-top: 12px;
-    }
-
-    .back-link {
-      color: #93c5fd;
-      text-decoration: none;
-      font-weight: bold;
-    }
+    body { margin: 0; font-family: Arial, sans-serif; background: #0f172a; color: white; }
+    .header { background: #111827; padding: 20px; text-align: center; }
+    .header h1 { margin: 0; font-size: 28px; }
+    .header p { margin-top: 8px; color: #cbd5e1; }
+    .section { padding: 20px; max-width: 1200px; margin: 0 auto; }
+    .card { background: #1e293b; border-radius: 14px; padding: 16px; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+    .back-link { color: #93c5fd; text-decoration: none; font-weight: bold; }
+    .button { display: inline-block; padding: 12px 18px; background: #2563eb; color: white; border-radius: 10px; font-weight: bold; border: none; cursor: pointer; margin-top: 10px; margin-right: 10px; }
+    .button.red { background: #dc2626; }
+    .button.green { background: #166534; }
+    .input { width: 100%; padding: 12px; border-radius: 10px; border: none; margin-top: 8px; margin-bottom: 12px; font-size: 16px; box-sizing: border-box; }
+    .status { display: inline-block; padding: 8px 12px; border-radius: 999px; background: #334155; color: #e2e8f0; font-size: 13px; font-weight: bold; margin-top: 8px; }
+    .coords { background: #0f172a; padding: 12px; border-radius: 10px; margin-top: 12px; line-height: 1.8; }
+    #map { width: 100%; height: 600px; border-radius: 14px; overflow: hidden; }
+    .small { color: #cbd5e1; font-size: 14px; }
   </style>
 </head>
-
 <body>
 
-<div class="header">
-  <h1>Driver Tracking</h1>
-</div>
-
-<div class="section">
-
-  <div class="card">
-    <a class="back-link" href="/index.html">← Back</a>
+  <div class="header">
+    <h1>Driver Tracking Page</h1>
+    <p>Live driver map and tracking controls</p>
   </div>
 
-  <div class="card">
-    <h2>Driver Info</h2>
+  <div class="section">
+    <div class="card">
+      <a class="back-link" href="/index.html">← Back to Home</a>
+    </div>
 
-    <input class="input" id="driverName" placeholder="Driver Name" />
-    <input class="input" id="truckNumber" placeholder="Truck Number" />
-    <input class="input" id="loadNumber" placeholder="Load Number" />
-    <input class="input" id="driverStatus" placeholder="Status (In Transit)" />
+    <div class="card">
+      <h2>Driver Information</h2>
+      <input class="input" id="driverName" placeholder="Driver Name" />
+      <input class="input" id="truckNumber" placeholder="Truck Number" />
+      <input class="input" id="loadNumber" placeholder="Load Number" />
+      <input class="input" id="driverStatus" placeholder="Status (In Transit)" />
+      <button class="button green" onclick="saveDriver()">Save Driver Info</button>
+    </div>
 
-    <button class="button" onclick="saveDriver()">Save Driver</button>
+    <div class="card">
+      <h2>Tracking Controls</h2>
+      <button class="button" onclick="startTracking()">Enable Tracking</button>
+      <button class="button red" onclick="stopTracking()">Stop Tracking</button>
+      <div id="status" class="status">Tracking not started</div>
+
+      <div class="coords" id="coords">
+        Latitude: Not available<br>
+        Longitude: Not available<br>
+        Accuracy: Not available<br>
+        Last Update: Not available
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Driver Map</h2>
+      <p class="small">Street or satellite driver view with live location updates.</p>
+      <button class="button" onclick="setStreetView()">Street View</button>
+      <button class="button" onclick="setSatelliteView()">Satellite View</button>
+      <div id="map"></div>
+    </div>
   </div>
 
-  <div class="card">
-    <h2>Tracking</h2>
+  <script>
+    const supabaseClient = supabase.createClient(
+      "https://mubhwsjppmebuwpmsuwg.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
+    );
 
-    <button class="button" onclick="startTracking()">Start</button>
-    <button class="button red" onclick="stopTracking()">Stop</button>
+    const TOMTOM_API_KEY = "Y18RLm8evGUvp0THSxz50lZJZMYNqH25";
 
-    <div id="status" class="status">OFF</div>
+    const tomtomStreet = L.tileLayer(`https://{s}.api.tomtom.com/map/1/tile/basic/main/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`, {
+      subdomains: ["a","b","c","d"], maxZoom: 22
+    });
 
-    <div id="coords" class="coords"></div>
-  </div>
+    const tomtomSatellite = L.tileLayer(`https://api.tomtom.com/map/1/tile/sat/main/{z}/{x}/{y}.jpg?key=${TOMTOM_API_KEY}`, {
+      maxZoom: 19
+    });
 
-  <div class="card">
-    <iframe id="map" class="map-box"
-      src="https://www.google.com/maps?q=Atlanta&output=embed">
-    </iframe>
-  </div>
+    const tomtomHybrid = L.tileLayer(`https://{s}.api.tomtom.com/map/1/tile/hybrid/main/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`, {
+      subdomains: ["a","b","c","d"], maxZoom: 22
+    });
 
-</div>
+    const map = L.map("map", { zoomControl: true, layers: [tomtomStreet] }).setView([33.749, -84.388], 6);
 
-<script>
+    let driverMarker = null;
+    let watchId = null;
+    let currentRowId = null;
+    let currentBase = "street";
 
-const supabaseClient = supabase.createClient(
-  "https://mubhwsjppmebuwpmsuwg.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
-);
+    function setStreetView() {
+      currentBase = "street";
+      if (map.hasLayer(tomtomSatellite)) map.removeLayer(tomtomSatellite);
+      if (map.hasLayer(tomtomHybrid)) map.removeLayer(tomtomHybrid);
+      if (!map.hasLayer(tomtomStreet)) map.addLayer(tomtomStreet);
+    }
 
-let watchId = null;
-let driverId = null;
+    function setSatelliteView() {
+      currentBase = "satellite";
+      if (map.hasLayer(tomtomStreet)) map.removeLayer(tomtomStreet);
+      if (!map.hasLayer(tomtomSatellite)) map.addLayer(tomtomSatellite);
+      if (!map.hasLayer(tomtomHybrid)) map.addLayer(tomtomHybrid);
+    }
 
-async function saveDriver() {
+    async function saveDriver() {
+      const driverName = document.getElementById("driverName").value || "Unknown Driver";
+      const truckNumber = document.getElementById("truckNumber").value || "Unknown Truck";
+      const loadNumber = document.getElementById("loadNumber").value || "Unknown Load";
+      const driverStatus = document.getElementById("driverStatus").value || "Waiting";
 
-  const { data, error } = await supabaseClient
-    .from("driver_locations")
-    .insert([{
-      driver_name: document.getElementById("driverName").value,
-      truck_number: document.getElementById("truckNumber").value,
-      load_number: document.getElementById("loadNumber").value,
-      driver_status: document.getElementById("driverStatus").value,
-      is_tracking: false
-    }])
-    .select()
-    .single();
+      const { data, error } = await supabaseClient
+        .from("driver_locations")
+        .insert([{
+          driver_name: driverName,
+          truck_number: truckNumber,
+          load_number: loadNumber,
+          driver_status: driverStatus,
+          is_tracking: false
+        }])
+        .select()
+        .single();
 
-  if (error) {
-    alert(error.message);
-    return;
-  }
+      if (error) {
+        alert("Error saving driver info: " + error.message);
+        return;
+      }
 
-  driverId = data.id;
-  alert("Saved");
-}
+      currentRowId = data.id;
+      alert("Driver info saved");
+    }
 
-function startTracking() {
+    async function startTracking() {
+      const status = document.getElementById("status");
+      const coords = document.getElementById("coords");
 
-  if (!driverId) {
-    alert("Save driver first");
-    return;
-  }
+      if (!currentRowId) {
+        alert("Please save driver info first");
+        return;
+      }
 
-  watchId = navigator.geolocation.watchPosition(async pos => {
+      if (!navigator.geolocation) {
+        status.textContent = "Geolocation is not supported on this device";
+        return;
+      }
 
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
+      status.textContent = "Requesting location permission...";
 
-    document.getElementById("coords").innerHTML =
-      "Lat: " + lat + "<br>Lng: " + lng;
+      watchId = navigator.geolocation.watchPosition(
+        async function(position) {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = position.coords.accuracy;
+          const updatedAt = new Date().toLocaleString();
 
-    document.getElementById("map").src =
-      "https://www.google.com/maps?q=" + lat + "," + lng + "&output=embed";
+          await supabaseClient
+            .from("driver_locations")
+            .update({
+              lat: lat,
+              lng: lng,
+              accuracy: accuracy,
+              is_tracking: true,
+              updated_at: new Date().toISOString(),
+              driver_status: document.getElementById("driverStatus").value || "In Transit"
+            })
+            .eq("id", currentRowId);
 
-    await supabaseClient
-      .from("driver_locations")
-      .update({
-        lat: lat,
-        lng: lng,
-        is_tracking: true,
-        updated_at: new Date()
-      })
-      .eq("id", driverId);
+          status.textContent = "Tracking enabled";
+          coords.innerHTML =
+            "Latitude: " + lat + "<br>" +
+            "Longitude: " + lng + "<br>" +
+            "Accuracy: " + accuracy + " meters<br>" +
+            "Last Update: " + updatedAt;
 
-    document.getElementById("status").innerText = "LIVE";
+          if (driverMarker) {
+            driverMarker.setLatLng([lat, lng]);
+          } else {
+            driverMarker = L.marker([lat, lng]).addTo(map).bindPopup("My Truck");
+          }
 
-  });
+          const zoomLevel = currentBase === "satellite" ? 19 : 20;
+          map.flyTo([lat, lng], zoomLevel, { animate: true, duration: 0.8 });
+        },
+        function(error) {
+          status.textContent = "Tracking error: " + error.message;
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 1000,
+          timeout: 10000
+        }
+      );
+    }
 
-}
+    async function stopTracking() {
+      const status = document.getElementById("status");
 
-function stopTracking() {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
 
-  if (watchId) {
-    navigator.geolocation.clearWatch(watchId);
-  }
+      if (currentRowId) {
+        await supabaseClient
+          .from("driver_locations")
+          .update({
+            is_tracking: false,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", currentRowId);
+      }
 
-  document.getElementById("status").innerText = "STOPPED";
-
-}
-
-</script>
-
+      status.textContent = "Tracking stopped";
+    }
+  </script>
 </body>
 </html>
