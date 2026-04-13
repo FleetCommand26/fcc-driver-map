@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Shipper Dashboard - FCC TomTom Real-Time View</title>
+  <title>Shipper Dashboard - FCC Live Tracking</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -21,3 +21,171 @@
       padding: 20px;
       text-align: center;
     }
+
+    .section {
+      padding: 20px;
+    }
+
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    #map {
+      height: 500px;
+      border-radius: 12px;
+    }
+
+    .button {
+      padding: 10px 14px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      margin: 5px;
+      cursor: pointer;
+    }
+
+    .driver-box {
+      background: #0f172a;
+      padding: 10px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+
+    .green { background: #166534; }
+    .yellow { background: #854d0e; }
+    .red { background: #991b1b; }
+  </style>
+</head>
+
+<body>
+
+<div class="header">
+  <h1>Shipper Dashboard</h1>
+  <p>Track your shipments in real time</p>
+</div>
+
+<div class="section">
+
+  <div class="card">
+    <button class="button" onclick="setStreet()">Street</button>
+    <button class="button" onclick="setSatellite()">Satellite</button>
+    <button class="button" onclick="zoomAll()">Zoom All</button>
+  </div>
+
+  <div class="card">
+    <div id="map"></div>
+  </div>
+
+  <div class="card">
+    <h3>Active Shipments</h3>
+    <div id="drivers"></div>
+  </div>
+
+</div>
+
+<script>
+
+const supabase = supabase.createClient(
+  "https://mubhwsjppmebuwpmsuwg.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+);
+
+const TOMTOM = "Y18RLm8evGUvp0THSxz50lZJZMYNqH25";
+
+const street = L.tileLayer(
+  `https://{s}.api.tomtom.com/map/1/tile/basic/main/{z}/{x}/{y}.png?key=${TOMTOM}`,
+  { subdomains: ["a","b","c","d"], maxZoom: 22 }
+);
+
+const sat = L.tileLayer(
+  `https://api.tomtom.com/map/1/tile/sat/main/{z}/{x}/{y}.jpg?key=${TOMTOM}`,
+  { maxZoom: 19 }
+);
+
+const hybrid = L.tileLayer(
+  `https://{s}.api.tomtom.com/map/1/tile/hybrid/main/{z}/{x}/{y}.png?key=${TOMTOM}`,
+  { subdomains:["a","b","c","d"], maxZoom:22 }
+);
+
+const map = L.map("map",{layers:[street]}).setView([33.7,-84.3],6);
+
+let layer = L.layerGroup().addTo(map);
+let drivers = [];
+
+function setStreet(){
+  map.removeLayer(sat);
+  map.removeLayer(hybrid);
+  map.addLayer(street);
+}
+
+function setSatellite(){
+  map.removeLayer(street);
+  map.addLayer(sat);
+  map.addLayer(hybrid);
+}
+
+function state(d){
+  if(!d.updated_at) return "red";
+  const min = (Date.now()-new Date(d.updated_at))/60000;
+  if(min>5) return "yellow";
+  return "green";
+}
+
+function zoomAll(){
+  const b=[];
+  drivers.forEach(d=>{
+    if(d.lat&&d.lng) b.push([d.lat,d.lng]);
+  });
+  if(b.length>1) map.fitBounds(b);
+}
+
+async function load(){
+
+  const {data}=await supabase.from("driver_locations").select("*");
+
+  drivers=data;
+  layer.clearLayers();
+
+  let html="";
+
+  data.forEach(d=>{
+
+    const s=state(d);
+
+    html+=`
+      <div class="driver-box">
+        <strong>${d.driver_name||"Driver"}</strong><br>
+        Truck: ${d.truck_number||""}<br>
+        Load: ${d.load_number||""}<br>
+        <div class="${s}" style="padding:4px;border-radius:6px;margin-top:5px;">
+          ${s.toUpperCase()}
+        </div>
+      </div>
+    `;
+
+    if(d.lat&&d.lng){
+      L.circleMarker([d.lat,d.lng],{
+        radius:8,
+        color:s==="green"?"#22c55e":s==="yellow"?"#f59e0b":"#ef4444"
+      })
+      .bindPopup(d.driver_name||"Driver")
+      .addTo(layer);
+    }
+
+  });
+
+  document.getElementById("drivers").innerHTML=html;
+
+}
+
+load();
+setInterval(load,2000);
+
+</script>
+
+</body>
+</html>
