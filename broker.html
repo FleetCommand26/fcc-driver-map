@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Broker Dashboard - FCC TomTom Follow Mode</title>
+  <title>Broker Dashboard - FCC TomTom Real-Time Follow Mode</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -107,7 +107,7 @@
 
     #map {
       width: 100%;
-      height: 700px;
+      height: 720px;
       border-radius: 14px;
       overflow: hidden;
     }
@@ -151,11 +151,6 @@
 
     .badge.blue {
       background: #1d4ed8;
-      color: white;
-    }
-
-    .badge.gray {
-      background: #475569;
       color: white;
     }
 
@@ -275,7 +270,7 @@
 
   <div class="header">
     <h1>Broker Dashboard</h1>
-    <p>TomTom street + satellite follow mode with traffic overlays</p>
+    <p>TomTom street + satellite follow mode with tighter live follow</p>
   </div>
 
   <div class="section">
@@ -311,7 +306,7 @@
       <div>
         <div class="card">
           <h2>Live Driver Map</h2>
-          <p class="small">Street, satellite, traffic flow, and incident overlays.</p>
+          <p class="small">Street or satellite view with traffic overlays and fast follow mode.</p>
 
           <button class="button" onclick="setStreetView()">Street View</button>
           <button class="button secondary" onclick="setSatelliteView()">Satellite View</button>
@@ -413,8 +408,8 @@
       }
     );
 
-    const tomtomLabels = L.tileLayer(
-      `https://{s}.api.tomtom.com/map/1/tile/labels/main/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`,
+    const tomtomHybrid = L.tileLayer(
+      `https://{s}.api.tomtom.com/map/1/tile/hybrid/main/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}`,
       {
         subdomains: ["a", "b", "c", "d"],
         maxZoom: 22,
@@ -443,7 +438,7 @@
 
     const map = L.map("map", {
       zoomControl: true,
-      layers: [tomtomStreet, tomtomLabels]
+      layers: [tomtomStreet]
     }).setView([33.749, -84.388], 6);
 
     let markersLayer = L.layerGroup().addTo(map);
@@ -458,15 +453,15 @@
     function setStreetView() {
       currentBase = "street";
       if (map.hasLayer(tomtomSatellite)) map.removeLayer(tomtomSatellite);
+      if (map.hasLayer(tomtomHybrid)) map.removeLayer(tomtomHybrid);
       if (!map.hasLayer(tomtomStreet)) map.addLayer(tomtomStreet);
-      if (!map.hasLayer(tomtomLabels)) map.addLayer(tomtomLabels);
     }
 
     function setSatelliteView() {
       currentBase = "satellite";
       if (map.hasLayer(tomtomStreet)) map.removeLayer(tomtomStreet);
       if (!map.hasLayer(tomtomSatellite)) map.addLayer(tomtomSatellite);
-      if (!map.hasLayer(tomtomLabels)) map.addLayer(tomtomLabels);
+      if (!map.hasLayer(tomtomHybrid)) map.addLayer(tomtomHybrid);
     }
 
     function toggleTrafficFlow() {
@@ -741,10 +736,11 @@
       const driver = latestDrivers.find(d => d.id === followedDriverId);
       if (!driver || !driver.lat || !driver.lng) return;
 
-      const zoomLevel = currentBase === "satellite" ? 18 : 20;
+      const zoomLevel = currentBase === "satellite" ? 19 : 20;
+
       map.flyTo([driver.lat, driver.lng], zoomLevel, {
         animate: true,
-        duration: 1.1
+        duration: 0.8
       });
 
       updateSelectedDriverPanel(driver);
@@ -993,7 +989,7 @@
     }
 
     loadDrivers();
-    setInterval(loadDrivers, 2000);
+    setInterval(loadDrivers, 1000);
   </script>
 </body>
 </html>
