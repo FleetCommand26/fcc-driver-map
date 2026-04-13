@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/check-no-reply",
+      "schedule": "*/2 * * * *"
+    }
+  ]
+}
