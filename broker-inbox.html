@@ -27,10 +27,82 @@
     .timeline { padding-left:18px; }
     .timeline-item { margin-bottom:10px; }
     select, textarea { width:100%; padding:12px; border:none; border-radius:10px; box-sizing:border-box; margin:8px 0 12px; }
-    @media (max-width: 900px) { .grid { grid-template-columns:1fr; } }
+
+    .toast-wrap {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 99999;
+      width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .toast {
+      border-radius: 12px;
+      padding: 14px 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+      color: white;
+      pointer-events: auto;
+      animation: slideIn 0.25s ease-out;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .toast h4 {
+      margin: 0 0 6px 0;
+      font-size: 15px;
+    }
+
+    .toast p {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.5;
+      color: rgba(255,255,255,0.92);
+    }
+
+    .toast.declined_load {
+      background: #7f1d1d;
+    }
+
+    .toast.pod_uploaded {
+      background: #14532d;
+    }
+
+    .toast.general {
+      background: #334155;
+    }
+
+    .toast-close {
+      margin-top: 10px;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.15);
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-8px) translateX(12px); }
+      to { opacity: 1; transform: translateY(0) translateX(0); }
+    }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns:1fr; }
+      .toast-wrap {
+        left: 12px;
+        right: 12px;
+        width: auto;
+      }
+    }
   </style>
 </head>
 <body>
+  <div class="toast-wrap" id="toastWrap"></div>
+
   <div class="wrap">
     <div class="card">
       <h1>Broker Dispatch Inbox</h1>
@@ -67,7 +139,7 @@
             <option value="">Select load</option>
           </select>
           <select id="reassignDriverSelect">
-            <option value="">Select driver</option>
+            <option value="">Select new driver</option>
           </select>
           <textarea id="reassignNote" placeholder="Reason or note"></textarea>
           <button class="button orange" onclick="reassignLoad()">Reassign Driver</button>
@@ -87,6 +159,7 @@
     let currentProfile = null;
     let selectedNotification = null;
     let selectedLoadId = null;
+    let shownToastIds = new Set();
 
     async function signOut() {
       await supabaseClient.auth.signOut();
@@ -132,6 +205,41 @@
           is_read: false
         }]);
       return error;
+    }
+
+    function escapeHtml(text) {
+      return String(text || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function showToast(notification) {
+      if (!notification || shownToastIds.has(notification.id)) return;
+
+      shownToastIds.add(notification.id);
+
+      const wrap = document.getElementById("toastWrap");
+      const toast = document.createElement("div");
+      toast.className = `toast ${notification.event_type || "general"}`;
+
+      toast.innerHTML = `
+        <h4>${escapeHtml(notification.title)}</h4>
+        <p>${escapeHtml(notification.message || "")}</p>
+        <button class="toast-close">Close</button>
+      `;
+
+      toast.querySelector(".toast-close").addEventListener("click", () => {
+        toast.remove();
+      });
+
+      wrap.prepend(toast);
+
+      setTimeout(() => {
+        toast.remove();
+      }, 7000);
     }
 
     async function syncNotificationsFromData() {
@@ -361,7 +469,7 @@
             <span class="badge ${n.event_type}">${n.event_type}</span><br>
             Read: ${n.is_read ? "Yes" : "No"}<br>
             Created: ${new Date(n.created_at).toLocaleString()}<br>
-            <button class="button" onclick='showNotification(${JSON.stringify(n).replace(/'/g, "&apos;")})'>Open</button>
+            <button class="button" onclick="showNotificationById(${n.id})">Open</button>
             <button class="button secondary" onclick="markRead(${n.id})">Mark Read</button>
           </div>
         `;
@@ -369,6 +477,18 @@
 
       document.getElementById("notificationList").innerHTML = html || "No notifications.";
       document.getElementById("reassignLoadSelect").innerHTML = loadOptions;
+    }
+
+    async function showNotificationById(id) {
+      const { data } = await supabaseClient
+        .from("broker_notifications")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (data) {
+        showNotification(data);
+      }
     }
 
     async function addTripEvent(loadId, eventType, note = "") {
@@ -432,10 +552,16 @@
 
       if (!finalError) {
         loadNotifications();
-        if (selectedNotification && selectedNotification.load_id === loadId) {
-          const refreshed = await supabaseClient.from("broker_notifications").select("*").eq("load_id", loadId).order("created_at", { ascending: false }).limit(1);
-          if (refreshed.data && refreshed.data.length) {
-            showNotification(refreshed.data[0]);
+        if (selectedLoadId === loadId) {
+          const { data } = await supabaseClient
+            .from("broker_notifications")
+            .select("*")
+            .eq("load_id", loadId)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          if (data && data.length) {
+            showNotification(data[0]);
           }
         }
       }
@@ -444,17 +570,48 @@
     function subscribeRealtime() {
       supabaseClient
         .channel("broker-inbox-live")
-        .on("postgres_changes", { event: "*", schema: "public", table: "broker_notifications" }, () => loadNotifications())
-        .on("postgres_changes", { event: "*", schema: "public", table: "loads" }, () => {
-          loadNotifications();
-          if (selectedNotification) showNotification(selectedNotification);
-        })
-        .on("postgres_changes", { event: "*", schema: "public", table: "trip_events" }, () => {
-          if (selectedNotification) showNotification(selectedNotification);
-        })
-        .on("postgres_changes", { event: "*", schema: "public", table: "dispatch_assignments" }, () => {
-          if (selectedNotification) showNotification(selectedNotification);
-        })
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "broker_notifications" },
+          payload => {
+            const n = payload.new;
+            if (!n) return;
+
+            if (currentProfile.role !== "admin" && n.broker_company !== currentProfile.company_name) {
+              return;
+            }
+
+            showToast(n);
+            loadNotifications();
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "broker_notifications" },
+          () => loadNotifications()
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "loads" },
+          () => {
+            loadNotifications();
+            if (selectedNotification) showNotificationById(selectedNotification.id);
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "trip_events" },
+          () => {
+            if (selectedNotification) showNotificationById(selectedNotification.id);
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "dispatch_assignments" },
+          () => {
+            if (selectedNotification) showNotificationById(selectedNotification.id);
+          }
+        )
         .subscribe();
     }
 
