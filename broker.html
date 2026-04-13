@@ -740,9 +740,15 @@
           html += `<div class="route-line"><strong>Detour Advice:</strong> Current route looks acceptable.</div>`;
         }
 
-        document.getElementById("routePanel").innerHTML = html;
-      } catch (err) {
-        document.getElementById("routePanel").innerHTML = `<div class="route-line">Route error: ${err.message}</div>`;
+      document.getElementById("routePanel").innerHTML = `
+  <div class="route-line">
+    Route error: ${err.message}
+  </div>
+  <div class="route-line">
+    Try typing the city and full state name.<br>
+    Example: Jacksonville, Florida
+  </div>
+`;
       }
     }
 
