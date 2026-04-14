@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Shipper Dashboard - Secure</title>
+  <title>Owner Dashboard - Secure</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -28,8 +28,8 @@
 </head>
 <body>
   <div class="header">
-    <h1>Shipper Dashboard</h1>
-    <p>Secure shipper-only view</p>
+    <h1>Owner Dashboard</h1>
+    <p>Admin + Owner Access</p>
   </div>
 
   <div class="section">
@@ -44,7 +44,7 @@
         <div id="map"></div>
       </div>
       <div class="card">
-        <h3>My Shipper Loads</h3>
+        <h3>My Owner Loads</h3>
         <div id="driverList">Loading...</div>
       </div>
     </div>
@@ -74,7 +74,12 @@
 
     function makeIcon(state) {
       const cls = state === "green" ? "marker-green" : state === "yellow" ? "marker-yellow" : "marker-red";
-      return L.divIcon({ className:"", html:`<div class="marker-pin ${cls}"></div>`, iconSize:[26,26], iconAnchor:[13,13] });
+      return L.divIcon({
+        className:"",
+        html:`<div class="marker-pin ${cls}"></div>`,
+        iconSize:[26,26],
+        iconAnchor:[13,13]
+      });
     }
 
     async function signOut() {
@@ -98,13 +103,14 @@
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (!profile || profile.role !== "shipper") {
-        document.getElementById("authBox").innerHTML = "Signed in, but this account is not a shipper.";
+      if (!profile || !["owner", "admin"].includes(profile.role)) {
+        document.getElementById("authBox").innerHTML = "Signed in, but this account is not allowed on owner dashboard.";
         document.getElementById("driverList").innerHTML = "No access.";
         return;
       }
 
-      document.getElementById("authBox").innerHTML = `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
+      document.getElementById("authBox").innerHTML =
+        `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
 
       const { data, error } = await supabaseClient
         .from("driver_locations")
@@ -127,7 +133,7 @@
             <strong>Load ${row.load_number || "N/A"}</strong><br>
             Driver: ${row.driver_name || "N/A"}<br>
             Truck: ${row.truck_number || "N/A"}<br>
-            Shipper Company: ${row.shipper_company || "N/A"}<br>
+            Owner Company: ${row.owner_company || "N/A"}<br>
             <span class="badge ${state}">${state.toUpperCase()}</span>
           </div>
         `;
@@ -140,7 +146,7 @@
         }
       });
 
-      document.getElementById("driverList").innerHTML = html || "No shipper rows visible.";
+      document.getElementById("driverList").innerHTML = html || "No owner rows visible.";
       if (bounds.length === 1) map.setView(bounds[0], 12);
       else if (bounds.length > 1) map.fitBounds(bounds, { padding:[40,40] });
     }
