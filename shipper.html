@@ -29,7 +29,7 @@
 <body>
   <div class="header">
     <h1>Shipper Dashboard</h1>
-    <p>Secure shipper-only view</p>
+    <p>Admin + Shipper Access</p>
   </div>
 
   <div class="section">
@@ -98,8 +98,8 @@
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (!profile || profile.role !== "shipper") {
-        document.getElementById("authBox").innerHTML = "Signed in, but this account is not a shipper.";
+      if (!profile || !["shipper", "admin"].includes(profile.role)) {
+        document.getElementById("authBox").innerHTML = "Signed in, but this account is not allowed on shipper dashboard.";
         document.getElementById("driverList").innerHTML = "No access.";
         return;
       }
