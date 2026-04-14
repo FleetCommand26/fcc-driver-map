@@ -33,16 +33,23 @@
 <script>
 const supabaseClient = supabase.createClient(
   "https://mubhwsjppmebuwpmsuwg.supabase.co",
-  "YOUR_ANON_KEY"
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ymh3c2pwcG1lYnV3cG1zdXdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDEwMjcsImV4cCI6MjA5MTYxNzAyN30.v37pbEsIFvGUAF5vPsqmogVpYa9kdCM42Im8xSCiHSM"
 );
 
-// 🔥 get loadId from URL
+// 🔥 get values from tracking link
 const params = new URLSearchParams(window.location.search);
 const loadId = params.get("loadId");
+const driverName = params.get("name") || "Driver";
+const phone = params.get("phone") || null;
 
 let watchId = null;
 
-// 🔥 start tracking immediately
+// 🔥 validate loadId
+if (!loadId) {
+  document.getElementById("status").innerText = "Missing loadId in link";
+}
+
+// 🔥 start tracking
 function startTracking() {
   if (!navigator.geolocation) {
     document.getElementById("status").innerText = "GPS not supported";
@@ -56,18 +63,20 @@ function startTracking() {
     const lng = pos.coords.longitude;
 
     document.getElementById("status").innerText =
-      `📍 Live Location\nLat: ${lat}\nLng: ${lng}`;
+      `📍 ${driverName}\nLat: ${lat}\nLng: ${lng}`;
 
-    // 🔥 update driver location
+    // 🔥 UPSERT (creates if missing, updates if exists)
     await supabaseClient
       .from("driver_locations")
-      .update({
+      .upsert({
+        load_id: loadId,
+        driver_name: driverName,
+        phone: phone,
         lat: lat,
         lng: lng,
         is_tracking: true,
         updated_at: new Date().toISOString()
-      })
-      .eq("load_id", loadId);
+      });
 
   }, (err) => {
     document.getElementById("status").innerText =
