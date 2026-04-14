@@ -6,6 +6,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <style>
     body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:white; }
     .header { background:#111827; padding:20px; text-align:center; }
@@ -24,30 +25,53 @@
     .marker-green { background:#22c55e; }
     .marker-yellow { background:#f59e0b; }
     .marker-red { background:#ef4444; }
+    .route-line { font-size:14px; line-height:1.6; margin-bottom:10px; }
   </style>
 </head>
+
 <body>
   <div class="header">
     <h1>Broker Dashboard</h1>
-    <p>Secure broker-only view</p>
+    <p>Admin + Broker Access</p>
   </div>
 
   <div class="section">
+
     <div class="card">
       <button class="button" onclick="location.href='/auth.html'">Go to Login</button>
       <button class="button" onclick="signOut()">Sign Out</button>
       <div id="authBox" class="status">Checking login...</div>
     </div>
 
+    <!-- ✅ UPDATED LAYOUT -->
     <div class="layout">
+
+      <!-- MAP -->
       <div class="card">
         <div id="map"></div>
       </div>
-      <div class="card">
-        <h3>My Broker Loads</h3>
-        <div id="driverList">Loading...</div>
+
+      <!-- RIGHT PANEL -->
+      <div>
+
+        <!-- DRIVER LIST -->
+        <div class="card">
+          <h3>My Broker Loads</h3>
+          <div id="driverList">Loading...</div>
+        </div>
+
+        <!-- 🔥 ETA PANEL -->
+        <div class="card">
+          <h2>Live Route + ETA</h2>
+          <div id="etaPanel">
+            <div class="route-line">No active route selected yet.</div>
+          </div>
+        </div>
+
       </div>
+
     </div>
+
   </div>
 
   <script>
@@ -88,7 +112,7 @@
       const user = userData.user;
 
       if (!user) {
-        document.getElementById("authBox").innerHTML = "Not signed in. Go to auth.html";
+        document.getElementById("authBox").innerHTML = "Not signed in.";
         document.getElementById("driverList").innerHTML = "No access.";
         return;
       }
@@ -99,13 +123,15 @@
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (!profile || profile.role !== "broker") {
-        document.getElementById("authBox").innerHTML = "Signed in, but this account is not a broker.";
+      // ✅ ADMIN + BROKER ACCESS FIX
+      if (!profile || !["broker","admin"].includes(profile.role)) {
+        document.getElementById("authBox").innerHTML = "Access denied.";
         document.getElementById("driverList").innerHTML = "No access.";
         return;
       }
 
-      document.getElementById("authBox").innerHTML = `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
+      document.getElementById("authBox").innerHTML =
+        `Signed in as ${profile.email}<br>Role: ${profile.role}<br>Company: ${profile.company_name}`;
 
       const { data, error } = await supabaseClient
         .from("driver_locations")
@@ -123,6 +149,7 @@
 
       data.forEach(row => {
         const state = getState(row);
+
         html += `
           <div class="driver-item">
             <strong>Load ${row.load_number || "N/A"}</strong><br>
@@ -142,6 +169,7 @@
       });
 
       document.getElementById("driverList").innerHTML = html || "No broker rows visible.";
+
       if (bounds.length === 1) map.setView(bounds[0], 12);
       else if (bounds.length > 1) map.fitBounds(bounds, { padding:[40,40] });
     }
