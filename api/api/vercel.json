@@ -1,8 +1,6 @@
 {
   "crons": [
-    {
-      "path": "/api/check-no-reply",
-      "schedule": "*/2 * * * *"
-    }
+    { "path": "/api/billing-rollup", "schedule": "0 12 * * 1" },
+    { "path": "/api/enforce-locks", "schedule": "0 13 * * 1" }
   ]
 }
