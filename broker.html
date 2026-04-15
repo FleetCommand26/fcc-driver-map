@@ -122,7 +122,18 @@
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
+// 🔒 BILLING LOCK CHECK
+const { data: acct } = await supabaseClient
+  .from("billing_accounts")
+  .select("*")
+  .eq("company_name", profile.company_name)
+  .maybeSingle();
 
+if (acct && acct.billing_status === "locked") {
+  document.getElementById("authBox").innerHTML =
+    `Account locked for unpaid FCC balance. Please pay to continue.`;
+  return;
+}
       // ✅ ADMIN + BROKER ACCESS FIX
       if (!profile || !["broker","admin"].includes(profile.role)) {
         document.getElementById("authBox").innerHTML = "Access denied.";
