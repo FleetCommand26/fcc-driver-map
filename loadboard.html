@@ -2,4 +2,100 @@ async function assignLoad() {
   if (!(await checkAccess())) return;
 
   const loadId = Number(document.getElementById("loadSelect").value);
-  const driver
+  const driverId = Number(document.getElementById("driverSelect").value);
+
+  if (!loadId || !driverId) {
+    document.getElementById("assignStatus").innerHTML = "Select both load and driver.";
+    return;
+  }
+
+  const { data: load } = await supabaseClient
+    .from("loads")
+    .select("*")
+    .eq("id", loadId)
+    .single();
+
+  const { data: driver } = await supabaseClient
+    .from("driver_locations")
+    .select("*")
+    .eq("id", driverId)
+    .single();
+
+  if (!load || !driver) {
+    document.getElementById("assignStatus").innerHTML = "Error loading driver or load.";
+    return;
+  }
+
+  const { data: insertedRows, error: insertError } = await supabaseClient
+    .from("dispatch_assignments")
+    .insert([{
+      load_id: loadId,
+      driver_location_id: driverId,
+      assigned_by: currentUser.id,
+      status: "assigned"
+    }])
+    .select();
+
+  if (insertError) {
+    document.getElementById("assignStatus").innerHTML = `Assign error: ${insertError.message}`;
+    return;
+  }
+
+  const assignment = insertedRows[0];
+
+  const { error: updateError } = await supabaseClient
+    .from("loads")
+    .update({
+      assigned_driver_location_id: driverId,
+      status: "assigned",
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", loadId);
+
+  if (updateError) {
+    document.getElementById("assignStatus").innerHTML = `Load update error: ${updateError.message}`;
+    return;
+  }
+
+  await supabaseClient
+    .from("driver_locations")
+    .update({
+      load_id: loadId,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", driverId);
+
+  if (driver.phone) {
+    try {
+      await fetch("/api/send-driver-sms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          to: driver.phone,
+          driverName: driver.driver_name,
+          loadId: load.id,
+          loadNumber: load.load_number,
+          pickup: load.pickup_name,
+          delivery: load.delivery_name,
+          dispatchAssignmentId: assignment.id,
+          replyMinutes: 5
+        })
+      });
+
+      document.getElementById("assignStatus").innerHTML =
+        "Driver assigned and SMS sent ✅";
+
+    } catch (err) {
+      document.getElementById("assignStatus").innerHTML =
+        "Assigned but SMS failed ⚠️";
+    }
+  } else {
+    document.getElementById("assignStatus").innerHTML =
+      "Assigned but driver has no phone ⚠️";
+  }
+
+  loadLoads();
+  loadDispatches();
+}
